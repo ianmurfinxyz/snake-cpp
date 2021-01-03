@@ -1,15 +1,47 @@
+//----------------------------------------------------------------------------------------------//
+//                  _                                                                           //
+//                 | |                                                                          //
+//  ___ _ __   __ _| | _____     __                                                             //
+// / __| '_ \ / _` | |/ / _ \   {OO}                                                            //
+// \__ \ | | | (_| |   <  __/   \__/                                                            //
+// |___/_| |_|\__,_|_|\_\___|   |^|                                                             //
+//  ____________________________/ /                                                             //
+// /  ___________________________/                                                              //
+//  \_______ \                                                                                  //
+//          \|                                                                                  //
+//                                                                                              //
+// FILE: snake.cpp                                                                              //
+// AUTHOR: Ian Murfin - github.com/ianmurfinxyz                                                 //
+//                                                                                              //
+// CREATED: 2nd Jan 2021                                                                        //
+// UPDATED: 3rd Jan 2021                                                                        //
+//                                                                                              //
+//----------------------------------------------------------------------------------------------//
+
 #include <chrono>
 #include <thread>
 #include <cstdint>
+#include <iostream>
+#include <iomanip>
+#include <algorithm>
+#include <string>
+#include <sstream>
+#include <cassert>
+#include <cmath>
+#include <array>
+#include <vector>
+#include <memory>
+#include <fstream>
 
-class Snake
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_opengl.h>
+
+namespace sk
 {
 
-};
-
-"------------------------------------------------------------------------------------------------"
-"  MATH                                                                                          "
-"------------------------------------------------------------------------------------------------"
+//------------------------------------------------------------------------------------------------
+//  MATH                                                                                          
+//------------------------------------------------------------------------------------------------
 
 struct iRect
 {
@@ -19,9 +51,22 @@ struct iRect
   int32_t _h;
 };
 
-"------------------------------------------------------------------------------------------------"
-"  LOG                                                                                           "
-"------------------------------------------------------------------------------------------------"
+//------------------------------------------------------------------------------------------------
+//  LOG                                                                                           
+//------------------------------------------------------------------------------------------------
+
+namespace logstr
+{
+  constexpr const char* fail_open_log = "failed to open log";
+  constexpr const char* fail_sdl_init = "failed to initialize SDL";
+  constexpr const char* fail_create_opengl_context = "failed to create opengl context";
+  constexpr const char* fail_set_opengl_attribute = "failed to set opengl attribute";
+  constexpr const char* fail_create_window = "failed to create window";
+
+  constexpr const char* info_stderr_log = "logging to standard error";
+  constexpr const char* info_creating_window = "creating window";
+  constexpr const char* info_created_window = "window created";
+}; 
 
 class Log
 {
@@ -69,9 +114,9 @@ void Log::log(Level level, const char* error, const std::string& addendum)
 
 std::unique_ptr<Log> log {nullptr};
 
-"------------------------------------------------------------------------------------------------"
-"  INPUT                                                                                               "
-"------------------------------------------------------------------------------------------------"
+//------------------------------------------------------------------------------------------------
+//  INPUT                                                                                       
+//------------------------------------------------------------------------------------------------
 
 class Input
 {
@@ -176,9 +221,65 @@ Input::KeyCode Input::convertSdlKeyCode(int sdlCode)
 
 std::unique_ptr<Input> input {nullptr};
 
-"------------------------------------------------------------------------------------------------"
-"  RENDERER                                                                                      "
-"------------------------------------------------------------------------------------------------"
+//------------------------------------------------------------------------------------------------
+//  RENDERER                                                                                      
+//------------------------------------------------------------------------------------------------
+
+class Color3f
+{
+  constexpr static float lo {0.f};
+  constexpr static float hi {1.f};
+
+public:
+  Color3f() : _r{0.f}, _g{0.f}, _b{0.f}{}
+
+  constexpr Color3f(float r, float g, float b) : 
+    _r{std::clamp(r, lo, hi)},
+    _g{std::clamp(g, lo, hi)},
+    _b{std::clamp(b, lo, hi)}
+  {}
+
+  Color3f(const Color3f&) = default;
+  Color3f(Color3f&&) = default;
+  Color3f& operator=(const Color3f&) = default;
+  Color3f& operator=(Color3f&&) = default;
+
+  float getRed() const {return _r;}
+  float getGreen() const {return _g;}
+  float getBlue() const {return _b;}
+  void setRed(float r){_r = std::clamp(r, lo, hi);}
+  void setGreen(float g){_g = std::clamp(g, lo, hi);}
+  void setBlue(float b){_b = std::clamp(b, lo, hi);}
+
+private:
+  float _r;
+  float _g;
+  float _b;
+};
+
+namespace colors
+{
+constexpr Color3f white {1.f, 1.f, 1.f};
+constexpr Color3f black {0.f, 0.f, 0.f};
+constexpr Color3f red {1.f, 0.f, 0.f};
+constexpr Color3f green {0.f, 1.f, 0.f};
+constexpr Color3f blue {0.f, 0.f, 1.f};
+constexpr Color3f cyan {0.f, 1.f, 1.f};
+constexpr Color3f magenta {1.f, 0.f, 1.f};
+constexpr Color3f yellow {1.f, 1.f, 0.f};
+
+// greys - more grays: https://en.wikipedia.org/wiki/Shades_of_gray 
+
+constexpr Color3f gainsboro {0.88f, 0.88f, 0.88f};
+constexpr Color3f lightgray {0.844f, 0.844f, 0.844f};
+constexpr Color3f silver {0.768f, 0.768f, 0.768f};
+constexpr Color3f mediumgray {0.76f, 0.76f, 0.76f};
+constexpr Color3f spanishgray {0.608f, 0.608f, 0.608f};
+constexpr Color3f gray {0.512f, 0.512f, 0.512f};
+constexpr Color3f dimgray {0.42f, 0.42f, 0.42f};
+constexpr Color3f davysgray {0.34f, 0.34f, 0.34f};
+constexpr Color3f jet {0.208f, 0.208f, 0.208f};
+};
 
 class Renderer
 {
@@ -199,7 +300,7 @@ public:
   void clearWindow(const Color3f& color);
   void clearViewport(const Color3f& color);
   void show();
-  Vector2i getWindowSize() const;
+  void getWindowSize(int& w, int& h) const;
 private:
   static constexpr int openglVersionMajor = 2;
   static constexpr int openglVersionMinor = 1;
@@ -216,7 +317,7 @@ Renderer::Renderer(const Config& config)
 
   std::stringstream ss {};
   ss << "{w:" << _config._windowWidth << ",h:" << _config._windowHeight << "}";
-  log->log(Log::INFO, logstr::info_creating_window, std::string{ss.str()});
+  sk::log->log(Log::INFO, logstr::info_creating_window, std::string{ss.str()});
 
   _window = SDL_CreateWindow(
       _config._windowTitle.c_str(), 
@@ -224,31 +325,32 @@ Renderer::Renderer(const Config& config)
       SDL_WINDOWPOS_UNDEFINED,
       _config._windowWidth,
       _config._windowHeight,
-      sdl_window_opengl
+      SDL_WINDOW_OPENGL
   );
 
   if(_window == nullptr){
-    log->log(Log::FATAL, logstr::fail_create_window, std::string{SDL_GetError()});
+    sk::log->log(Log::FATAL, logstr::fail_create_window, std::string{SDL_GetError()});
     exit(EXIT_FAILURE);
   }
 
-  Vector2i wndsize = getWindowSize();
+  int w, h;
+  getWindowSize(w, h);
   std::stringstream().swap(ss);
-  ss << "{w:" << wndsize._x << ",h:" << wndsize._y << "}";
-  log->log(Log::INFO, logstr::info_created_window, std::string{ss.str()});
+  ss << "{w:" << w << ",h:" << h << "}";
+  sk::log->log(Log::INFO, logstr::info_created_window, std::string{ss.str()});
 
   _glContext = SDL_GL_CreateContext(_window);
   if(_glContext == nullptr){
-    log->log(Log::FATAL, logstr::fail_create_opengl_context, std::string{SDL_GetError()});
+    sk::log->log(Log::FATAL, logstr::fail_create_opengl_context, std::string{SDL_GetError()});
     exit(EXIT_FAILURE);
   }
 
   if(SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, openglVersionMajor) < 0){
-    nomad::log->log(Log::FATAL, logstr::fail_set_opengl_attribute, std::string{SDL_GetError()});
+    sk::log->log(Log::FATAL, logstr::fail_set_opengl_attribute, std::string{SDL_GetError()});
     exit(EXIT_FAILURE);
   }
   if(SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, openglVersionMinor) < 0){
-    nomad::log->log(Log::FATAL, logstr::fail_set_opengl_attribute, std::string{SDL_GetError()});
+    sk::log->log(Log::FATAL, logstr::fail_set_opengl_attribute, std::string{SDL_GetError()});
     exit(EXIT_FAILURE);
   }
 
@@ -293,32 +395,40 @@ void Renderer::show()
   SDL_GL_SwapWindow(_window);
 }
 
-Vector2i Renderer::getWindowSize() const
+void Renderer::getWindowSize(int& w, int& h) const
 {
-  Vector2i size;
-  SDL_GL_GetDrawableSize(_window, &size._x, &size._y);
-  return size;
+  SDL_GL_GetDrawableSize(_window, &w, &h);
 }
 
 std::unique_ptr<Renderer> renderer {nullptr};
 
-"------------------------------------------------------------------------------------------------"
-"  APP                                                                                               "
-"------------------------------------------------------------------------------------------------"
+//------------------------------------------------------------------------------------------------
+//  SNAKE                                                                                         
+//------------------------------------------------------------------------------------------------
+
+class Snake
+{
+public:
+private:
+};
+
+//------------------------------------------------------------------------------------------------
+//  APP                                                                                           
+//------------------------------------------------------------------------------------------------
 
 class App
 {
 public:
   using Clock_t = std::chrono::steady_clock;
-  using Timepoint_t = std::chrono::time_point<Clock_t>;
-  using Duration_t = std::chrono::nanoseconds();
+  using TimePoint_t = std::chrono::time_point<Clock_t>;
+  using Duration_t = std::chrono::nanoseconds;
 private:
   class RealClock
   {
   public:
     RealClock() : _start{}, _now0{}, _now1{}, _dt{}{}
     ~RealClock() = default;
-    void start() {_now0 = _start() = Clock_t::now();}
+    void start() {_now0 = _start = Clock_t::now();}
     Duration_t update();
     Duration_t getDt() const {return _dt;}
     Duration_t getNow() const {return _now1 - _start;}
@@ -335,7 +445,7 @@ private:
     ~Metronome() = default;
     int64_t doTicks(Duration_t appNow);
     Duration_t getTickPeriod_ns() const {return _tickPeriod_ns;}
-    float getTicksPeriod_s() const {return _tickPeriod_s;}
+    float getTickPeriod_s() const {return _tickPeriod_s;}
   private:
     Duration_t _lastTickNow;
     Duration_t _tickPeriod_ns;
@@ -349,19 +459,19 @@ public:
   App(const App&&) = delete;
   App& operator=(const App&) = delete;
   App& operator=(App&&) = delete;
-  int initialize();
-  int shutdown();
-  int run();
+  void initialize();
+  void shutdown();
+  void run();
 private:
-  int loop();
+  void loop();
   void onTick(float dt);
 private:
   static constexpr const char* name = "snake";
-  static constexpr versionMajor = 0;
-  static constexpr versionMinor = 1;
+  static constexpr int appVersionMajor = 0;
+  static constexpr int appVersionMinor = 1;
   static constexpr int windowWidth_px = 600;
   static constexpr int windowHeight_px = 600;
-  static constexpr int32_t maxTicksPerFrame = 5;
+  static constexpr int maxTicksPerFrame = 5;
   static constexpr Duration_t minFramePeriod {static_cast<int64_t>(0.01e9)};
 private:
   RealClock _clock;
@@ -381,7 +491,7 @@ App::Duration_t App::RealClock::update()
 App::Metronome::Metronome(App::Duration_t appNow, App::Duration_t tickPeriod_ns) :
   _lastTickNow{appNow},
   _tickPeriod_ns{tickPeriod_ns},
-  _tickPeriod_s{static_cast<float>(_tickPeriod_ns.count()) / 1.0e9},
+  _tickPeriod_s{static_cast<float>(_tickPeriod_ns.count()) / 1.0e9f},
   _totalTicks{0}
 {
 }
@@ -399,7 +509,8 @@ int64_t App::Metronome::doTicks(Duration_t appNow)
 
 App::App() : 
   _clock{}, 
-  _metronome{Duration_t{static_cast<int64_t>(0.016e9)}},
+  _metronome{_clock.getNow(), Duration_t{static_cast<int64_t>(0.016e9)}},
+  _ticksAccumulated{0},
   _isDone{false}
 {
 }
@@ -408,39 +519,41 @@ App::~App()
 {
 }
 
-int App::initialize()
+void App::initialize()
 {
-  log = std::make_unique<Log>();
-  input = std::make_unique<Input>();
+  sk::log = std::make_unique<Log>();
+  sk::input = std::make_unique<Input>();
 
   if(SDL_Init(SDL_INIT_VIDEO) < 0){
-    log->log(Log::FATAL, logstr::fail_sdl_init, std::string{SDL_GetError()});
+    sk::log->log(Log::FATAL, logstr::fail_sdl_init, std::string{SDL_GetError()});
     exit(EXIT_FAILURE);
   }
 
   std::stringstream ss{};
   ss << name
      << " - version: "
-     << versionMajor
+     << appVersionMajor
      << "."
-     << versionMinor;
+     << appVersionMinor;
 
-  Renderer::Config rconfig {std::string{ss.str()}, 600, 600};
+  Renderer::Config rconfig {std::string{ss.str()}, windowWidth_px, windowHeight_px};
   renderer = std::make_unique<Renderer>(rconfig);
 }
 
-int App::shutdown()
+void App::shutdown()
 {
-   
+  sk::log.reset(nullptr);
+  sk::input.reset(nullptr);
+  sk::renderer.reset(nullptr);
 }
 
-int App::run()
+void App::run()
 {
   while(!_isDone)
     loop();
 }
 
-int App::loop()
+void App::loop()
 {
   auto now0 = Clock_t::now();
   auto realDt = _clock.update();
@@ -454,7 +567,7 @@ int App::loop()
         return;
       case SDL_KEYDOWN:
       case SDL_KEYUP:
-        g_input->onKeyEvent(event);
+        sk::input->onKeyEvent(event);
     }
   }
 
@@ -466,7 +579,7 @@ int App::loop()
     onTick(_metronome.getTickPeriod_s());
   }
 
-  g_input->onUpdate();
+  sk::input->onUpdate();
 
   auto now1 = Clock_t::now();
   auto framePeriod = now1 - now0;
@@ -476,11 +589,25 @@ int App::loop()
 
 void App::onTick(float dt)
 {
-  // TODO add the colors class 
-  renderer->clearWindow(colors::);
+  sk::renderer->clearWindow(colors::jet);
+
+  sk::renderer->show();
 }
+
+std::unique_ptr<App> app {nullptr};
+
+}; // namespace sk
+
+//------------------------------------------------------------------------------------------------
+//  MAIN                                                                                          
+//------------------------------------------------------------------------------------------------
 
 int main()
 {
-
+  sk::app = std::make_unique<sk::App>();
+  sk::app->initialize();
+  sk::app->run();
+  sk::app->shutdown();
+  sk::app.reset(nullptr);
 }
+
