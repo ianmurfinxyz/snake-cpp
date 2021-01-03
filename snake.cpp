@@ -43,6 +43,53 @@ namespace sk
 //  MATH                                                                                          
 //------------------------------------------------------------------------------------------------
 
+struct Vector2i
+{
+  constexpr Vector2i() : _x{0}, _y{0} {}
+  constexpr Vector2i(int32_t x, int32_t y) : _x{x}, _y{y} {}
+
+  Vector2i(const Vector2i&) = default;
+  Vector2i(Vector2i&&) = default;
+  Vector2i& operator=(const Vector2i&) = default;
+  Vector2i& operator=(Vector2i&&) = default;
+
+  void zero() {_x = _y = 0;}
+  bool isZero() {return _x == 0 && _y == 0;}
+  Vector2i operator+(const Vector2i& v) const {return Vector2i{_x + v._x, _y + v._y};}
+  void operator+=(const Vector2i& v) {_x += v._x; _y += v._y;}
+  Vector2i operator-(const Vector2i& v) const {return Vector2i{_x - v._x, _y - v._y};}
+  void operator-=(const Vector2i& v) {_x -= v._x; _y -= v._y;}
+  Vector2i operator*(float scale) const {return Vector2i(_x * scale, _y * scale);}
+  void operator*=(float scale) {_x *= scale; _y *= scale;}
+  void operator*=(int32_t scale) {_x *= scale; _y *= scale;}
+  float dot(const Vector2i& v) {return (_x * v._x) + (_y * v._y);}
+  float cross(const Vector2i& v) const {return (_x * v._y) - (_y * v._x);}
+  float length() const {return std::hypot(_x, _y);}
+  float lengthSquared() const {return (_x * _x) + (_y * _y);}
+  inline Vector2i normalized() const;
+  inline void normalize();
+
+  int32_t _x;
+  int32_t _y;
+};
+
+Vector2i Vector2i::normalized() const
+{
+  Vector2i v = *this;
+  v.normalize();
+  return v;
+}
+
+void Vector2i::normalize()
+{
+  float l = (_x * _x) + (_y * _y);
+  if(l) {
+    l = std::sqrt(l);
+    _x /= l;
+    _y /= l;
+  }
+}
+
 struct iRect
 {
   int32_t _x;
@@ -296,10 +343,12 @@ public:
   Renderer* operator=(const Renderer&) = delete;
   ~Renderer();
   void setViewport(iRect viewport);
-  void blitBlock();
+  void blitBitmap(int w, int h, int xori, int yori, int xinc, int yinc, uint8_t* bitmap);
   void clearWindow(const Color3f& color);
   void clearViewport(const Color3f& color);
   void show();
+  void setRasterPos(int x, int y);
+  void setDrawColor(const Color3f& color);
   void getWindowSize(int& w, int& h) const;
 private:
   static constexpr int openglVersionMajor = 2;
@@ -375,6 +424,11 @@ void Renderer::setViewport(iRect viewport)
   _viewport = viewport;
 }
 
+void Renderer::blitBitmap(int w, int h, int xori, int yori, int xinc, int yinc, uint8_t* bitmap)
+{
+  glBitmap(w, h, xori, yori, xinc, yinc, bitmap);
+}
+
 void Renderer::clearWindow(const Color3f& color)
 {
   glClearColor(color.getRed(), color.getGreen(), color.getBlue(), 1.f);
@@ -395,6 +449,16 @@ void Renderer::show()
   SDL_GL_SwapWindow(_window);
 }
 
+void Renderer::setRasterPos(int x, int y)
+{
+  glRasterPos2i(x, y);
+}
+
+void Renderer::setDrawColor(const Color3f& color)
+{
+  glColor3f(color.getRed(), color.getGreen(), color.getBlue());  
+}
+
 void Renderer::getWindowSize(int& w, int& h) const
 {
   SDL_GL_GetDrawableSize(_window, &w, &h);
@@ -406,11 +470,154 @@ std::unique_ptr<Renderer> renderer {nullptr};
 //  SNAKE                                                                                         
 //------------------------------------------------------------------------------------------------
 
+class Palette
+{
+public:
+  static constexpr int numColors = 8;
+public:
+  Palette() = default; 
+  ~Palette() = default;
+  void setColor(const Color3f& color, int index);
+  const Color3f& getColor(int index) const;
+private:
+  std::array<Color3f, numColors> _colors;
+};
+
+void Palette::setColor(const Color3f& color, int index)
+{
+  assert(0 <= index && index < numColors);
+  _colors[index] = color;
+}
+
+const Color3f& Palette::getColor(int index) const
+{
+  assert(0 <= index && index < numColors);
+  return _colors[index];
+}
+
+// A 2D world of blocks. Each block in the world is simply an integer index into a color
+// palette. By default all unset blocks have a value of 0 which is thus color 0 into the
+// palette. Hence color 0 is used as the background color of the world.
+//
+// The position of the block world is taken as the bottom-left corner and the grid is laid
+// out as shown below:
+//
+//      row
+//       ^
+//       |
+//       |
+//   pos o----> col
+//
+class BlockWorld
+{
+  using BlockRow = std::vector<uint8_t>;
+  using BlockGrid = std::vector<BlockRow>;
+public:
+  BlockWorld(Vector2i position, Vector2i dimensions, const Palette& palette);
+  ~BlockWorld() = default;
+  void draw();
+  void setBlock(int row, int col, int colorIndex);
+  const Color3f& getBlock(int row, int col) const;
+private:
+  static constexpr int blockSize_px = 8; 
+  static std::array<uint8_t, 8> bitmap;   // must be non-const to be passed to glBitmap.
+private:
+  void populate();
+  void clear();
+private:
+  BlockGrid _grid;
+  Vector2i _dimensions; // [x:width, y:height] in blocks.
+  Vector2i _position;   // w.r.t screen space.
+  const Palette& _palette;
+};
+
+std::array<uint8_t, 8> BlockWorld::bitmap {0x00, 0x7e, 0x7e, 0x7e, 0x7e, 0x7e, 0x7e, 0x00};
+
+BlockWorld::BlockWorld(Vector2i position, Vector2i dimensions, const Palette& palette) :
+  _grid{},
+  _dimensions{dimensions},
+  _position{position},
+  _palette{palette}
+{
+  populate();
+}
+
+void BlockWorld::draw()
+{
+  auto now0 = std::chrono::high_resolution_clock::now();
+
+  int y {_position._y};
+  int colorIndex {-1};
+  sk::renderer->setRasterPos(_position._x, y);
+  for(auto& row : _grid){
+    for(auto& block : row){
+      if(colorIndex != block){
+        sk::renderer->setDrawColor(_palette.getColor(block)); 
+        colorIndex = block;
+      }
+      sk::renderer->blitBitmap(blockSize_px, blockSize_px, 0, 0, blockSize_px, 0, bitmap.data()); 
+    }
+    y += blockSize_px;
+    sk::renderer->setRasterPos(_position._x, y);
+  }
+
+  // TODO - This function is really slow!!! On my system it is taking ~47ms with a world
+  // of 50x50 blocks! Find the bottleneck and a more efficient rendering method.
+
+  auto now1 = std::chrono::high_resolution_clock::now();
+  std::cout << "BlockWorld::draw execution time (us): " 
+            << std::chrono::duration_cast<std::chrono::microseconds>(now1 - now0).count() 
+            << std::endl;
+}
+
+void BlockWorld::populate()
+{
+  _grid.reserve(_dimensions._y);
+  for(int row = 0; row < _dimensions._y; ++row){
+    BlockRow blockRow{};
+    blockRow.reserve(_dimensions._x);
+    for(int col = 0; col < _dimensions._x; ++col)
+      blockRow.push_back(0);
+    _grid.push_back(std::move(blockRow));
+  }
+}
+
+void BlockWorld::clear()
+{
+  for(auto& row : _grid)
+    for(auto& block : row)
+      block = 0;
+}
+
 class Snake
 {
 public:
+  Snake();
+  ~Snake() = default;
+  void draw();
 private:
+  Palette _palette;
+  BlockWorld _gameWorld;
 };
+
+Snake::Snake() : 
+  _palette{},
+  _gameWorld(Vector2i{10,10}, Vector2i{50, 1}, _palette)
+{
+  _palette.setColor(colors::red, 0);
+  _palette.setColor(colors::blue, 1);
+  _palette.setColor(colors::green, 2);
+  _palette.setColor(colors::red, 3);
+  _palette.setColor(colors::red, 4);
+  _palette.setColor(colors::red, 5);
+  _palette.setColor(colors::red, 6);
+  _palette.setColor(colors::red, 7);
+}
+
+void Snake::draw()
+{
+  _gameWorld.draw();
+}
 
 //------------------------------------------------------------------------------------------------
 //  APP                                                                                           
@@ -478,6 +685,8 @@ private:
   Metronome _metronome;
   int64_t _ticksAccumulated;
   bool _isDone;
+
+  Snake _game;
 };
 
 App::Duration_t App::RealClock::update()
@@ -590,7 +799,7 @@ void App::loop()
 void App::onTick(float dt)
 {
   sk::renderer->clearWindow(colors::jet);
-
+  _game.draw();
   sk::renderer->show();
 }
 
