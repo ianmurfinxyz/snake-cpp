@@ -270,7 +270,7 @@ Input::KeyCode Input::convertSdlKeyCode(int sdlCode)
 std::unique_ptr<Input> input {nullptr};
 
 //------------------------------------------------------------------------------------------------
-//  RENDERER                                                                                      
+//  GFX                                                                                           
 //------------------------------------------------------------------------------------------------
 
 class Color4
@@ -374,9 +374,9 @@ public:
   void setViewport(iRect viewport);
   void clearWindow(const Color4& color);
   void clearViewport(const Color4& color);
-  void drawBlockArray(int first, int count, void* blockData, int blockPixelSize);
+  void drawPixelArray(int first, int count, void* pixels, int pixelSize);
   void show();
-  void getWindowSize(int& w, int& h) const;
+  Vector2i getWindowSize() const;
 private:
   static constexpr int openglVersionMajor = 2;
   static constexpr int openglVersionMinor = 1;
@@ -409,10 +409,9 @@ Renderer::Renderer(const Config& config)
     exit(EXIT_FAILURE);
   }
 
-  int w, h;
-  getWindowSize(w, h);
+  Vector2i windowSize = getWindowSize();
   std::stringstream().swap(ss);
-  ss << "{w:" << w << ",h:" << h << "}";
+  ss << "{w:" << windowSize._x << ",h:" << windowSize._y << "}";
   sk::log->log(Log::INFO, logstr::info_created_window, std::string{ss.str()});
 
   _glContext = SDL_GL_CreateContext(_window);
@@ -467,10 +466,10 @@ void Renderer::clearViewport(const Color4& color)
   glDisable(GL_SCISSOR_TEST);
 }
 
-void Renderer::drawBlockArray(int first, int count, void* blockData, int blockPixelSize)
+void Renderer::drawPixelArray(int first, int count, void* pixels, int pixelSize)
 {
-  glInterleavedArrays(GL_C4UB_V2F, 0, blockData);
-  glPointSize(blockPixelSize - 2);
+  glInterleavedArrays(GL_C4UB_V2F, 0, pixels);
+  glPointSize(pixelSize);
   glDrawArrays(GL_POINTS, first, count);
 }
 
@@ -479,48 +478,21 @@ void Renderer::show()
   SDL_GL_SwapWindow(_window);
 }
 
-void Renderer::getWindowSize(int& w, int& h) const
+Vector2i Renderer::getWindowSize() const
 {
+  int w, h;
   SDL_GL_GetDrawableSize(_window, &w, &h);
+  return Vector2i{w, h};
 }
 
 std::unique_ptr<Renderer> renderer {nullptr};
 
-//------------------------------------------------------------------------------------------------
-//  SNAKE                                                                                         
-//------------------------------------------------------------------------------------------------
-
-//class Palette
-//{
-//public:
-//  static constexpr int numColors = 8;
-//public:
-//  Palette() = default; 
-//  ~Palette() = default;
-//  void setColor(const Color3f& color, int index);
-//  const Color3f& getColor(int index) const;
-//private:
-//  std::array<Color3f, numColors> _colors;
-//};
+// A virtual screen with fixed resolution independent of display resolution and window size. The
+// screen is positioned centrally in the window with the ratio of virtual pixel size to real
+// pixel size being calculated to fit the window dimensions.
 //
-//void Palette::setColor(const Color3f& color, int index)
-//{
-//  assert(0 <= index && index < numColors);
-//  _colors[index] = color;
-//}
-//
-//const Color3f& Palette::getColor(int index) const
-//{
-//  assert(0 <= index && index < numColors);
-//  return _colors[index];
-//}
-
-// A 2D world of blocks. Each block in the world is simply an integer index into a color
-// palette. By default all unset blocks have a value of 0 which is thus color 0 into the
-// palette. Hence color 0 is used as the background color of the world.
-//
-// The position of the block world is taken as the bottom-left corner and the grid is laid
-// out as shown below:
+// Pixels on the screen are arranged on a coordinate system with the origin in the bottom left
+// most corner, rows ascending north and columns ascending east as shown below.
 //
 //      row
 //       ^
@@ -528,112 +500,21 @@ std::unique_ptr<Renderer> renderer {nullptr};
 //       |
 //   pos o----> col
 //
-//class BlockWorld
-//{
-//  using BlockRow = std::vector<uint8_t>;
-//  using BlockGrid = std::vector<BlockRow>;
-//public:
-//  BlockWorld(Vector2i position, Vector2i dimensions, const Palette& palette);
-//  ~BlockWorld() = default;
-//  void draw();
-//  void setBlock(int row, int col, int colorIndex);
-//  const Color3f& getBlock(int row, int col) const;
-//private:
-//  static constexpr int blockSize_px = 8; 
-//  static std::array<uint8_t, 8> bitmap;   // must be non-const to be passed to glBitmap.
-//private:
-//  void populate();
-//  void clear();
-//private:
-//  BlockGrid _grid;
-//  Vector2i _dimensions; // [x:width, y:height] in blocks.
-//  Vector2i _position;   // w.r.t screen space.
-//  const Palette& _palette;
-//};
+// note: virtual pixel sizes are limited to integer mulitiples of real pixels, i.e. integers.
 //
-//std::array<uint8_t, 8> BlockWorld::bitmap {0x00, 0x7e, 0x7e, 0x7e, 0x7e, 0x7e, 0x7e, 0x00};
-//
-//BlockWorld::BlockWorld(Vector2i position, Vector2i dimensions, const Palette& palette) :
-//  _grid{},
-//  _dimensions{dimensions},
-//  _position{position},
-//  _palette{palette}
-//{
-//  populate();
-//}
-//
-//void BlockWorld::draw()
-//{
-//  // TODO - This function is really slow!!! On my system it is taking ~47ms with a world
-//  // of 50x50 blocks! Find the bottleneck and a more efficient rendering method.
-//  //
-//  // I never had an issue with this with the space invaders game since the number of glbitmap
-//  // calls is considerably lower (on the order of a few hundred at most) whereas here I am working
-//  // with ~2500+ calls. According to this discussion:
-//  //          https://stackoverflow.com/questions/3339877/glbitmap-questions
-//  // I should just go with textures quads. Which I can do no prob so should make the switch. I 
-//  // actually wont need to texture them, can simply draw colored quads.
-//  
-//  int64_t sum {0};
-//
-//  int y {_position._y};
-//  int colorIndex {-1};
-//  sk::renderer->setRasterPos(_position._x, y);
-//  for(auto& row : _grid){
-//    for(auto& block : row){
-//      if(colorIndex != block){
-//        sk::renderer->setDrawColor(_palette.getColor(block)); 
-//        colorIndex = block;
-//      }
-//
-//      auto now0 = std::chrono::high_resolution_clock::now();
-//      sk::renderer->blitBitmap(blockSize_px, blockSize_px, 0, 0, blockSize_px, 0, bitmap.data()); 
-//      auto now1 = std::chrono::high_resolution_clock::now();
-//      sum += std::chrono::duration_cast<std::chrono::microseconds>(now1 - now0).count();
-//    }
-//    y += blockSize_px;
-//    sk::renderer->setRasterPos(_position._x, y);
-//  }
-//
-//  sum /= 50 * 50;
-//
-//  std::cout << "blitBitmap execution avg time (us): " 
-//            << sum
-//            << std::endl;
-//
-//}
-//
-//void BlockWorld::populate()
-//{
-//  _grid.reserve(_dimensions._y);
-//  for(int row = 0; row < _dimensions._y; ++row){
-//    BlockRow blockRow{};
-//    blockRow.reserve(_dimensions._x);
-//    for(int col = 0; col < _dimensions._x; ++col)
-//      blockRow.push_back(0);
-//    _grid.push_back(std::move(blockRow));
-//  }
-//}
-//
-//void BlockWorld::clear()
-//{
-//  for(auto& row : _grid)
-//    for(auto& block : row)
-//      block = 0;
-//}
-
-class BlockWorld
+class Screen
 {
 public:
-  BlockWorld(Vector2i position);
-  ~BlockWorld() = default;
-  void setBlock(int row, int col, const Color4& color);
+  Screen(Vector2i windowSize);
+  ~Screen() = default;
   void clear(const Color4& color);
   void clear(iRect region, const Color4& color);
+  void rescalePixels(Vector2i windowSize);
   void draw();
+  void setPixel(int row, int col, const Color4& color);
 private:
-  // 12 byte blocks designed to work with glInterleavedArrays format GL_C4UB_V2F.
-  struct Block
+  // 12 byte pixels designed to work with glInterleavedArrays format GL_C4UB_V2F.
+  struct Pixel
   {
     uint8_t _red;
     uint8_t _green;
@@ -643,78 +524,110 @@ private:
     float _y;
   };
 private:
-  static constexpr int blockPixelSize = 11;  // use odd number so center of block is actually central.
-  static constexpr int worldBlockWidth = 50;
-  static constexpr int worldBlockHeight = 50;
-  static constexpr int worldBlockCount = worldBlockWidth * worldBlockHeight;
+  static constexpr int screenWidth = 160;
+  static constexpr int screenHeight = 160;
+  static constexpr int pixelCount = screenWidth * screenHeight;
 private:
   Vector2i _position;
-  std::array<Block, worldBlockCount> _blocks; // flattened 2D array accessed (col + (row * width))
+  std::array<Pixel, pixelCount> _pixels; // flattened 2D array accessed (col + (row * width))
+  int _pixelSize;
 };
 
-BlockWorld::BlockWorld(Vector2i position) : 
-  _position{position}
+Screen::Screen(Vector2i windowSize)
 {
-  int blockCenterOffset = (blockPixelSize + 1) / 2;
-  for(int col = 0; col < worldBlockWidth; ++col){
-    for(int row = 0; row < worldBlockWidth; ++row){
-      int index = col + (row * worldBlockWidth);
-      Block& block = _blocks[index];
-      block._red = 0;
-      block._green = 0;
-      block._blue = 0;
-      block._alpha = 0;
-      block._x = _position._x + (col * blockPixelSize) + blockCenterOffset;
-      block._y = _position._y + (row * blockPixelSize) + blockCenterOffset;
+  int pixelWidth = windowSize._x / screenWidth; 
+  int pixelHeight = windowSize._y / screenHeight;
+  _pixelSize = std::min(pixelWidth, pixelHeight);
+  if(_pixelSize == 0)
+    _pixelSize = 1;
+  int pixelCenterOffset = _pixelSize / 2;
+  _position._x = std::clamp((windowSize._x - (_pixelSize * screenWidth)) / 2, 0, windowSize._x);
+  _position._y = std::clamp((windowSize._y - (_pixelSize * screenHeight)) / 2, 0, windowSize._y);
+  for(int col = 0; col < screenWidth; ++col){
+    for(int row = 0; row < screenHeight; ++row){
+      int index = col + (row * screenWidth);
+      Pixel& pixel = _pixels[index];
+      pixel._red = 0;
+      pixel._green = 0;
+      pixel._blue = 0;
+      pixel._alpha = 0;
+      pixel._x = _position._x + (col * _pixelSize) + pixelCenterOffset;
+      pixel._y = _position._y + (row * _pixelSize) + pixelCenterOffset;
     }
   }
 }
 
-void BlockWorld::setBlock(int row, int col, const Color4& color)
+void Screen::setPixel(int row, int col, const Color4& color)
 {
-  assert(0 <= row && row < worldBlockHeight);
-  assert(0 <= col && col < worldBlockWidth);
-  int index = col + (row * worldBlockWidth);
-  Block& block = _blocks[index];
-  block._red = color.getiRed();
-  block._green = color.getiGreen();
-  block._blue = color.getiBlue();
-  block._alpha = color.getiAlpha();
+  assert(0 <= row && row < screenHeight);
+  assert(0 <= col && col < screenWidth);
+  int index = col + (row * screenWidth);
+  Pixel& pixel = _pixels[index];
+  pixel._red = color.getiRed();
+  pixel._green = color.getiGreen();
+  pixel._blue = color.getiBlue();
+  pixel._alpha = color.getiAlpha();
 }
 
-void BlockWorld::clear(const Color4& color)
+void Screen::clear(const Color4& color)
 {
   uint8_t r, g, b, a;
   r = color.getiRed();
   g = color.getiGreen();
   b = color.getiBlue();
   a = color.getiAlpha();
-  for(int col = 0; col < worldBlockWidth; ++col){
-    for(int row = 0; row < worldBlockWidth; ++row){
-      int index = col + (row * worldBlockWidth);
-      Block& block = _blocks[index];
-      block._red = r;
-      block._green = g;
-      block._blue = b;
-      block._alpha = a;
+  for(int col = 0; col < screenWidth; ++col){
+    for(int row = 0; row < screenHeight; ++row){
+      int index = col + (row * screenWidth);
+      Pixel& pixel = _pixels[index];
+      pixel._red = r;
+      pixel._green = g;
+      pixel._blue = b;
+      pixel._alpha = a;
     }
   }
 }
 
-void BlockWorld::clear(iRect region, const Color4& color)
+void Screen::clear(iRect region, const Color4& color)
 {
 
+} 
+
+void Screen::rescalePixels(Vector2i windowSize)
+{
+  int pixelWidth = windowSize._x / screenWidth; 
+  int pixelHeight = windowSize._y / screenHeight;
+  _pixelSize = std::min(pixelWidth, pixelHeight);
+  if(_pixelSize == 0)
+    _pixelSize = 1;
+  int pixelCenterOffset = _pixelSize / 2;
+  _position._x = std::clamp((windowSize._x - (_pixelSize * screenWidth)) / 2, 0, windowSize._x);
+  _position._y = std::clamp((windowSize._y - (_pixelSize * screenHeight)) / 2, 0, windowSize._y);
+  for(int col = 0; col < screenWidth; ++col){
+    for(int row = 0; row < screenHeight; ++row){
+      int index = col + (row * screenWidth);
+      Pixel& pixel = _pixels[index];
+      pixel._x = _position._x + (col * _pixelSize) + pixelCenterOffset;
+      pixel._y = _position._y + (row * _pixelSize) + pixelCenterOffset;
+    }
+  }
 }
 
-void BlockWorld::draw()
+void Screen::draw()
 {
   auto now0 = std::chrono::high_resolution_clock::now();
-  sk::renderer->drawBlockArray(0, worldBlockCount, static_cast<void*>(_blocks.data()), blockPixelSize);
+  sk::renderer->drawPixelArray(0, pixelCount, static_cast<void*>(_pixels.data()), _pixelSize);
   auto now1 = std::chrono::high_resolution_clock::now();
-  std::cout << "BlockWorld::draw execution time (us): "
+  std::cout << "Screen::draw execution time (us): "
             << std::chrono::duration_cast<std::chrono::microseconds>(now1 - now0).count()
             << std::endl;
 }
+
+std::unique_ptr<Screen> screen {nullptr};
+
+//------------------------------------------------------------------------------------------------
+//  SNAKE                                                                                         
+//------------------------------------------------------------------------------------------------
 
 class Snake
 {
@@ -723,18 +636,15 @@ public:
   ~Snake() = default;
   void draw();
 private:
-  BlockWorld _world;
 };
 
-Snake::Snake() : 
-  _world(Vector2i{10,10})
+Snake::Snake()
 {
-  _world.clear(colors::gainsboro);
 }
 
 void Snake::draw()
 {
-  _world.draw();
+  sk::screen->clear(colors::gainsboro);
 }
 
 //------------------------------------------------------------------------------------------------
@@ -794,8 +704,8 @@ private:
   static constexpr const char* name = "snake";
   static constexpr int appVersionMajor = 0;
   static constexpr int appVersionMinor = 1;
-  static constexpr int windowWidth_px = 600;
-  static constexpr int windowHeight_px = 600;
+  static constexpr int windowWidth_px = 700;
+  static constexpr int windowHeight_px = 200;
   static constexpr int maxTicksPerFrame = 5;
   static constexpr Duration_t minFramePeriod {static_cast<int64_t>(0.01e9)};
 private:
@@ -838,7 +748,8 @@ App::App() :
   _clock{}, 
   _metronome{_clock.getNow(), Duration_t{static_cast<int64_t>(0.016e9)}},
   _ticksAccumulated{0},
-  _isDone{false}
+  _isDone{false},
+  _game{}
 {
 }
 
@@ -850,6 +761,7 @@ void App::initialize()
 {
   sk::log = std::make_unique<Log>();
   sk::input = std::make_unique<Input>();
+  sk::screen = std::make_unique<Screen>(Vector2i{windowWidth_px, windowHeight_px});
 
   if(SDL_Init(SDL_INIT_VIDEO) < 0){
     sk::log->log(Log::FATAL, logstr::fail_sdl_init, std::string{SDL_GetError()});
@@ -865,6 +777,10 @@ void App::initialize()
 
   Renderer::Config rconfig {std::string{ss.str()}, windowWidth_px, windowHeight_px};
   renderer = std::make_unique<Renderer>(rconfig);
+
+  Vector2i windowSize = sk::renderer->getWindowSize();
+  if(windowSize._x != windowWidth_px || windowSize._y != windowHeight_px)
+    sk::screen->rescalePixels(windowSize);
 }
 
 void App::shutdown()
@@ -892,6 +808,15 @@ void App::loop()
       case SDL_QUIT:
         _isDone = true;
         return;
+      case SDL_WINDOWEVENT:
+        if(event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED){
+          int w, h;
+          w = event.window.data1;
+          h = event.window.data2;
+          sk::renderer->setViewport(iRect{0, 0, w, h});
+          sk::screen->rescalePixels(Vector2i{w, h});
+        }
+        break;
       case SDL_KEYDOWN:
       case SDL_KEYUP:
         sk::input->onKeyEvent(event);
@@ -918,6 +843,7 @@ void App::onTick(float dt)
 {
   sk::renderer->clearWindow(colors::jet);
   _game.draw();
+  sk::screen->draw();
   sk::renderer->show();
 }
 
