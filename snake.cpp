@@ -113,6 +113,7 @@ namespace logstr
   constexpr const char* info_stderr_log = "logging to standard error";
   constexpr const char* info_creating_window = "creating window";
   constexpr const char* info_created_window = "window created";
+  constexpr const char* using_opengl_version = "using opengl version";
 }; 
 
 class Log
@@ -272,60 +273,88 @@ std::unique_ptr<Input> input {nullptr};
 //  RENDERER                                                                                      
 //------------------------------------------------------------------------------------------------
 
-class Color3f
+class Color4
 {
-  constexpr static float lo {0.f};
-  constexpr static float hi {1.f};
+  constexpr static uint8_t i_lo {0};
+  constexpr static uint8_t i_hi {255};
+  constexpr static float f_lo {0.f};
+  constexpr static float f_hi {1.f};
 
 public:
-  Color3f() : _r{0.f}, _g{0.f}, _b{0.f}{}
+  Color4() : _fr{0.f}, _fg{0.f}, _fb{0.f}, _fa{0.f}, _ir{0}, _ig{0}, _ib{0}, _ia{0}{}
 
-  constexpr Color3f(float r, float g, float b) : 
-    _r{std::clamp(r, lo, hi)},
-    _g{std::clamp(g, lo, hi)},
-    _b{std::clamp(b, lo, hi)}
+  constexpr Color4(float r, float g, float b, float a = 0.f) : 
+    _fr{std::clamp(r, f_lo, f_hi)},
+    _fg{std::clamp(g, f_lo, f_hi)},
+    _fb{std::clamp(b, f_lo, f_hi)},
+    _fa{std::clamp(a, f_lo, f_hi)},
+    _ir{static_cast<uint8_t>(_fr * 255)},
+    _ig{static_cast<uint8_t>(_fg * 255)},
+    _ib{static_cast<uint8_t>(_fb * 255)},
+    _ia{static_cast<uint8_t>(_fa * 255)}
   {}
 
-  Color3f(const Color3f&) = default;
-  Color3f(Color3f&&) = default;
-  Color3f& operator=(const Color3f&) = default;
-  Color3f& operator=(Color3f&&) = default;
+  constexpr Color4(uint8_t r, uint8_t g, uint8_t b, uint8_t a = 0) :
+    _ir{std::clamp(r, i_lo, i_hi)},
+    _ig{std::clamp(g, i_lo, i_hi)},
+    _ib{std::clamp(b, i_lo, i_hi)},
+    _ia{std::clamp(a, i_lo, i_hi)},
+    _fr{std::clamp(_ir / 255.f, f_lo, f_hi)},   // clamp to snip any floating point errors.
+    _fg{std::clamp(_ir / 255.f, f_lo, f_hi)},
+    _fb{std::clamp(_ir / 255.f, f_lo, f_hi)},
+    _fa{std::clamp(_ir / 255.f, f_lo, f_hi)}
+  {}
 
-  float getRed() const {return _r;}
-  float getGreen() const {return _g;}
-  float getBlue() const {return _b;}
-  void setRed(float r){_r = std::clamp(r, lo, hi);}
-  void setGreen(float g){_g = std::clamp(g, lo, hi);}
-  void setBlue(float b){_b = std::clamp(b, lo, hi);}
+  Color4(const Color4&) = default;
+  Color4(Color4&&) = default;
+  Color4& operator=(const Color4&) = default;
+  Color4& operator=(Color4&&) = default;
+
+  float getfRed() const {return _fr;}
+  float getfGreen() const {return _fg;}
+  float getfBlue() const {return _fb;}
+  float getfAlpha() const {return _fa;}
+  uint8_t getiRed() const {return _ir;}
+  uint8_t getiGreen() const {return _ig;}
+  uint8_t getiBlue() const {return _ib;}
+  uint8_t getiAlpha() const {return _ia;}
+  void setRed(float r){_fr = std::clamp(r, f_lo, f_hi);}
+  void setGreen(float g){_fg = std::clamp(g, f_lo, f_hi);}
+  void setBlue(float b){_fb = std::clamp(b, f_lo, f_hi);}
 
 private:
-  float _r;
-  float _g;
-  float _b;
+  float _fr;
+  float _fg;
+  float _fb;
+  float _fa;
+  uint8_t _ir;
+  uint8_t _ig;
+  uint8_t _ib;
+  uint8_t _ia;
 };
 
 namespace colors
 {
-constexpr Color3f white {1.f, 1.f, 1.f};
-constexpr Color3f black {0.f, 0.f, 0.f};
-constexpr Color3f red {1.f, 0.f, 0.f};
-constexpr Color3f green {0.f, 1.f, 0.f};
-constexpr Color3f blue {0.f, 0.f, 1.f};
-constexpr Color3f cyan {0.f, 1.f, 1.f};
-constexpr Color3f magenta {1.f, 0.f, 1.f};
-constexpr Color3f yellow {1.f, 1.f, 0.f};
+constexpr Color4 white {1.f, 1.f, 1.f};
+constexpr Color4 black {0.f, 0.f, 0.f};
+constexpr Color4 red {1.f, 0.f, 0.f};
+constexpr Color4 green {0.f, 1.f, 0.f};
+constexpr Color4 blue {0.f, 0.f, 1.f};
+constexpr Color4 cyan {0.f, 1.f, 1.f};
+constexpr Color4 magenta {1.f, 0.f, 1.f};
+constexpr Color4 yellow {1.f, 1.f, 0.f};
 
 // greys - more grays: https://en.wikipedia.org/wiki/Shades_of_gray 
 
-constexpr Color3f gainsboro {0.88f, 0.88f, 0.88f};
-constexpr Color3f lightgray {0.844f, 0.844f, 0.844f};
-constexpr Color3f silver {0.768f, 0.768f, 0.768f};
-constexpr Color3f mediumgray {0.76f, 0.76f, 0.76f};
-constexpr Color3f spanishgray {0.608f, 0.608f, 0.608f};
-constexpr Color3f gray {0.512f, 0.512f, 0.512f};
-constexpr Color3f dimgray {0.42f, 0.42f, 0.42f};
-constexpr Color3f davysgray {0.34f, 0.34f, 0.34f};
-constexpr Color3f jet {0.208f, 0.208f, 0.208f};
+constexpr Color4 gainsboro {0.88f, 0.88f, 0.88f};
+constexpr Color4 lightgray {0.844f, 0.844f, 0.844f};
+constexpr Color4 silver {0.768f, 0.768f, 0.768f};
+constexpr Color4 mediumgray {0.76f, 0.76f, 0.76f};
+constexpr Color4 spanishgray {0.608f, 0.608f, 0.608f};
+constexpr Color4 gray {0.512f, 0.512f, 0.512f};
+constexpr Color4 dimgray {0.42f, 0.42f, 0.42f};
+constexpr Color4 davysgray {0.34f, 0.34f, 0.34f};
+constexpr Color4 jet {0.208f, 0.208f, 0.208f};
 };
 
 class Renderer
@@ -343,12 +372,10 @@ public:
   Renderer* operator=(const Renderer&) = delete;
   ~Renderer();
   void setViewport(iRect viewport);
-  void blitBitmap(int w, int h, int xori, int yori, int xinc, int yinc, uint8_t* bitmap);
-  void clearWindow(const Color3f& color);
-  void clearViewport(const Color3f& color);
+  void clearWindow(const Color4& color);
+  void clearViewport(const Color4& color);
+  void drawBlockArray(int first, int count, void* blockData, int blockPixelSize);
   void show();
-  void setRasterPos(int x, int y);
-  void setDrawColor(const Color3f& color);
   void getWindowSize(int& w, int& h) const;
 private:
   static constexpr int openglVersionMajor = 2;
@@ -403,7 +430,8 @@ Renderer::Renderer(const Config& config)
     exit(EXIT_FAILURE);
   }
 
-  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+  sk::log->log(Log::INFO, logstr::using_opengl_version, std::string{reinterpret_cast<const char*>(glGetString(GL_VERSION))});
+
   setViewport(iRect{0, 0, _config._windowWidth, _config._windowHeight});
 }
 
@@ -424,39 +452,31 @@ void Renderer::setViewport(iRect viewport)
   _viewport = viewport;
 }
 
-void Renderer::blitBitmap(int w, int h, int xori, int yori, int xinc, int yinc, uint8_t* bitmap)
+void Renderer::clearWindow(const Color4& color)
 {
-  glBitmap(w, h, xori, yori, xinc, yinc, bitmap);
-}
-
-void Renderer::clearWindow(const Color3f& color)
-{
-  glClearColor(color.getRed(), color.getGreen(), color.getBlue(), 1.f);
+  glClearColor(color.getfRed(), color.getfGreen(), color.getfBlue(), color.getfAlpha());
   glClear(GL_COLOR_BUFFER_BIT);
 }
 
-void Renderer::clearViewport(const Color3f& color)
+void Renderer::clearViewport(const Color4& color)
 {
   glEnable(GL_SCISSOR_TEST);
   glScissor(_viewport._x, _viewport._y, _viewport._w, _viewport._h);
-  glClearColor(color.getRed(), color.getGreen(), color.getBlue(), 1.f);
+  glClearColor(color.getfRed(), color.getfGreen(), color.getfBlue(), color.getfAlpha());
   glClear(GL_COLOR_BUFFER_BIT);
   glDisable(GL_SCISSOR_TEST);
+}
+
+void Renderer::drawBlockArray(int first, int count, void* blockData, int blockPixelSize)
+{
+  glInterleavedArrays(GL_C4UB_V2F, 0, blockData);
+  glPointSize(blockPixelSize - 2);
+  glDrawArrays(GL_POINTS, first, count);
 }
 
 void Renderer::show()
 {
   SDL_GL_SwapWindow(_window);
-}
-
-void Renderer::setRasterPos(int x, int y)
-{
-  glRasterPos2i(x, y);
-}
-
-void Renderer::setDrawColor(const Color3f& color)
-{
-  glColor3f(color.getRed(), color.getGreen(), color.getBlue());  
 }
 
 void Renderer::getWindowSize(int& w, int& h) const
@@ -470,30 +490,30 @@ std::unique_ptr<Renderer> renderer {nullptr};
 //  SNAKE                                                                                         
 //------------------------------------------------------------------------------------------------
 
-class Palette
-{
-public:
-  static constexpr int numColors = 8;
-public:
-  Palette() = default; 
-  ~Palette() = default;
-  void setColor(const Color3f& color, int index);
-  const Color3f& getColor(int index) const;
-private:
-  std::array<Color3f, numColors> _colors;
-};
-
-void Palette::setColor(const Color3f& color, int index)
-{
-  assert(0 <= index && index < numColors);
-  _colors[index] = color;
-}
-
-const Color3f& Palette::getColor(int index) const
-{
-  assert(0 <= index && index < numColors);
-  return _colors[index];
-}
+//class Palette
+//{
+//public:
+//  static constexpr int numColors = 8;
+//public:
+//  Palette() = default; 
+//  ~Palette() = default;
+//  void setColor(const Color3f& color, int index);
+//  const Color3f& getColor(int index) const;
+//private:
+//  std::array<Color3f, numColors> _colors;
+//};
+//
+//void Palette::setColor(const Color3f& color, int index)
+//{
+//  assert(0 <= index && index < numColors);
+//  _colors[index] = color;
+//}
+//
+//const Color3f& Palette::getColor(int index) const
+//{
+//  assert(0 <= index && index < numColors);
+//  return _colors[index];
+//}
 
 // A 2D world of blocks. Each block in the world is simply an integer index into a color
 // palette. By default all unset blocks have a value of 0 which is thus color 0 into the
@@ -508,85 +528,192 @@ const Color3f& Palette::getColor(int index) const
 //       |
 //   pos o----> col
 //
+//class BlockWorld
+//{
+//  using BlockRow = std::vector<uint8_t>;
+//  using BlockGrid = std::vector<BlockRow>;
+//public:
+//  BlockWorld(Vector2i position, Vector2i dimensions, const Palette& palette);
+//  ~BlockWorld() = default;
+//  void draw();
+//  void setBlock(int row, int col, int colorIndex);
+//  const Color3f& getBlock(int row, int col) const;
+//private:
+//  static constexpr int blockSize_px = 8; 
+//  static std::array<uint8_t, 8> bitmap;   // must be non-const to be passed to glBitmap.
+//private:
+//  void populate();
+//  void clear();
+//private:
+//  BlockGrid _grid;
+//  Vector2i _dimensions; // [x:width, y:height] in blocks.
+//  Vector2i _position;   // w.r.t screen space.
+//  const Palette& _palette;
+//};
+//
+//std::array<uint8_t, 8> BlockWorld::bitmap {0x00, 0x7e, 0x7e, 0x7e, 0x7e, 0x7e, 0x7e, 0x00};
+//
+//BlockWorld::BlockWorld(Vector2i position, Vector2i dimensions, const Palette& palette) :
+//  _grid{},
+//  _dimensions{dimensions},
+//  _position{position},
+//  _palette{palette}
+//{
+//  populate();
+//}
+//
+//void BlockWorld::draw()
+//{
+//  // TODO - This function is really slow!!! On my system it is taking ~47ms with a world
+//  // of 50x50 blocks! Find the bottleneck and a more efficient rendering method.
+//  //
+//  // I never had an issue with this with the space invaders game since the number of glbitmap
+//  // calls is considerably lower (on the order of a few hundred at most) whereas here I am working
+//  // with ~2500+ calls. According to this discussion:
+//  //          https://stackoverflow.com/questions/3339877/glbitmap-questions
+//  // I should just go with textures quads. Which I can do no prob so should make the switch. I 
+//  // actually wont need to texture them, can simply draw colored quads.
+//  
+//  int64_t sum {0};
+//
+//  int y {_position._y};
+//  int colorIndex {-1};
+//  sk::renderer->setRasterPos(_position._x, y);
+//  for(auto& row : _grid){
+//    for(auto& block : row){
+//      if(colorIndex != block){
+//        sk::renderer->setDrawColor(_palette.getColor(block)); 
+//        colorIndex = block;
+//      }
+//
+//      auto now0 = std::chrono::high_resolution_clock::now();
+//      sk::renderer->blitBitmap(blockSize_px, blockSize_px, 0, 0, blockSize_px, 0, bitmap.data()); 
+//      auto now1 = std::chrono::high_resolution_clock::now();
+//      sum += std::chrono::duration_cast<std::chrono::microseconds>(now1 - now0).count();
+//    }
+//    y += blockSize_px;
+//    sk::renderer->setRasterPos(_position._x, y);
+//  }
+//
+//  sum /= 50 * 50;
+//
+//  std::cout << "blitBitmap execution avg time (us): " 
+//            << sum
+//            << std::endl;
+//
+//}
+//
+//void BlockWorld::populate()
+//{
+//  _grid.reserve(_dimensions._y);
+//  for(int row = 0; row < _dimensions._y; ++row){
+//    BlockRow blockRow{};
+//    blockRow.reserve(_dimensions._x);
+//    for(int col = 0; col < _dimensions._x; ++col)
+//      blockRow.push_back(0);
+//    _grid.push_back(std::move(blockRow));
+//  }
+//}
+//
+//void BlockWorld::clear()
+//{
+//  for(auto& row : _grid)
+//    for(auto& block : row)
+//      block = 0;
+//}
+
 class BlockWorld
 {
-  using BlockRow = std::vector<uint8_t>;
-  using BlockGrid = std::vector<BlockRow>;
 public:
-  BlockWorld(Vector2i position, Vector2i dimensions, const Palette& palette);
+  BlockWorld(Vector2i position);
   ~BlockWorld() = default;
+  void setBlock(int row, int col, const Color4& color);
+  void clear(const Color4& color);
+  void clear(iRect region, const Color4& color);
   void draw();
-  void setBlock(int row, int col, int colorIndex);
-  const Color3f& getBlock(int row, int col) const;
 private:
-  static constexpr int blockSize_px = 8; 
-  static std::array<uint8_t, 8> bitmap;   // must be non-const to be passed to glBitmap.
+  // 12 byte blocks designed to work with glInterleavedArrays format GL_C4UB_V2F.
+  struct Block
+  {
+    uint8_t _red;
+    uint8_t _green;
+    uint8_t _blue;
+    uint8_t _alpha;
+    float _x;
+    float _y;
+  };
 private:
-  void populate();
-  void clear();
+  static constexpr int blockPixelSize = 11;  // use odd number so center of block is actually central.
+  static constexpr int worldBlockWidth = 50;
+  static constexpr int worldBlockHeight = 50;
+  static constexpr int worldBlockCount = worldBlockWidth * worldBlockHeight;
 private:
-  BlockGrid _grid;
-  Vector2i _dimensions; // [x:width, y:height] in blocks.
-  Vector2i _position;   // w.r.t screen space.
-  const Palette& _palette;
+  Vector2i _position;
+  std::array<Block, worldBlockCount> _blocks; // flattened 2D array accessed (col + (row * width))
 };
 
-std::array<uint8_t, 8> BlockWorld::bitmap {0x00, 0x7e, 0x7e, 0x7e, 0x7e, 0x7e, 0x7e, 0x00};
-
-BlockWorld::BlockWorld(Vector2i position, Vector2i dimensions, const Palette& palette) :
-  _grid{},
-  _dimensions{dimensions},
-  _position{position},
-  _palette{palette}
+BlockWorld::BlockWorld(Vector2i position) : 
+  _position{position}
 {
-  populate();
+  int blockCenterOffset = (blockPixelSize + 1) / 2;
+  for(int col = 0; col < worldBlockWidth; ++col){
+    for(int row = 0; row < worldBlockWidth; ++row){
+      int index = col + (row * worldBlockWidth);
+      Block& block = _blocks[index];
+      block._red = 0;
+      block._green = 0;
+      block._blue = 0;
+      block._alpha = 0;
+      block._x = _position._x + (col * blockPixelSize) + blockCenterOffset;
+      block._y = _position._y + (row * blockPixelSize) + blockCenterOffset;
+    }
+  }
+}
+
+void BlockWorld::setBlock(int row, int col, const Color4& color)
+{
+  assert(0 <= row && row < worldBlockHeight);
+  assert(0 <= col && col < worldBlockWidth);
+  int index = col + (row * worldBlockWidth);
+  Block& block = _blocks[index];
+  block._red = color.getiRed();
+  block._green = color.getiGreen();
+  block._blue = color.getiBlue();
+  block._alpha = color.getiAlpha();
+}
+
+void BlockWorld::clear(const Color4& color)
+{
+  uint8_t r, g, b, a;
+  r = color.getiRed();
+  g = color.getiGreen();
+  b = color.getiBlue();
+  a = color.getiAlpha();
+  for(int col = 0; col < worldBlockWidth; ++col){
+    for(int row = 0; row < worldBlockWidth; ++row){
+      int index = col + (row * worldBlockWidth);
+      Block& block = _blocks[index];
+      block._red = r;
+      block._green = g;
+      block._blue = b;
+      block._alpha = a;
+    }
+  }
+}
+
+void BlockWorld::clear(iRect region, const Color4& color)
+{
+
 }
 
 void BlockWorld::draw()
 {
   auto now0 = std::chrono::high_resolution_clock::now();
-
-  int y {_position._y};
-  int colorIndex {-1};
-  sk::renderer->setRasterPos(_position._x, y);
-  for(auto& row : _grid){
-    for(auto& block : row){
-      if(colorIndex != block){
-        sk::renderer->setDrawColor(_palette.getColor(block)); 
-        colorIndex = block;
-      }
-      sk::renderer->blitBitmap(blockSize_px, blockSize_px, 0, 0, blockSize_px, 0, bitmap.data()); 
-    }
-    y += blockSize_px;
-    sk::renderer->setRasterPos(_position._x, y);
-  }
-
-  // TODO - This function is really slow!!! On my system it is taking ~47ms with a world
-  // of 50x50 blocks! Find the bottleneck and a more efficient rendering method.
-
+  sk::renderer->drawBlockArray(0, worldBlockCount, static_cast<void*>(_blocks.data()), blockPixelSize);
   auto now1 = std::chrono::high_resolution_clock::now();
-  std::cout << "BlockWorld::draw execution time (us): " 
-            << std::chrono::duration_cast<std::chrono::microseconds>(now1 - now0).count() 
+  std::cout << "BlockWorld::draw execution time (us): "
+            << std::chrono::duration_cast<std::chrono::microseconds>(now1 - now0).count()
             << std::endl;
-}
-
-void BlockWorld::populate()
-{
-  _grid.reserve(_dimensions._y);
-  for(int row = 0; row < _dimensions._y; ++row){
-    BlockRow blockRow{};
-    blockRow.reserve(_dimensions._x);
-    for(int col = 0; col < _dimensions._x; ++col)
-      blockRow.push_back(0);
-    _grid.push_back(std::move(blockRow));
-  }
-}
-
-void BlockWorld::clear()
-{
-  for(auto& row : _grid)
-    for(auto& block : row)
-      block = 0;
 }
 
 class Snake
@@ -596,27 +723,18 @@ public:
   ~Snake() = default;
   void draw();
 private:
-  Palette _palette;
-  BlockWorld _gameWorld;
+  BlockWorld _world;
 };
 
 Snake::Snake() : 
-  _palette{},
-  _gameWorld(Vector2i{10,10}, Vector2i{50, 1}, _palette)
+  _world(Vector2i{10,10})
 {
-  _palette.setColor(colors::red, 0);
-  _palette.setColor(colors::blue, 1);
-  _palette.setColor(colors::green, 2);
-  _palette.setColor(colors::red, 3);
-  _palette.setColor(colors::red, 4);
-  _palette.setColor(colors::red, 5);
-  _palette.setColor(colors::red, 6);
-  _palette.setColor(colors::red, 7);
+  _world.clear(colors::gainsboro);
 }
 
 void Snake::draw()
 {
-  _gameWorld.draw();
+  _world.draw();
 }
 
 //------------------------------------------------------------------------------------------------
