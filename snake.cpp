@@ -14,7 +14,7 @@
 // AUTHOR: Ian Murfin - github.com/ianmurfinxyz                                                 //
 //                                                                                              //
 // CREATED: 2nd Jan 2021                                                                        //
-// UPDATED: 3rd Jan 2021                                                                        //
+// UPDATED: 4th Jan 2021                                                                        //
 //                                                                                              //
 //----------------------------------------------------------------------------------------------//
 
@@ -275,34 +275,27 @@ std::unique_ptr<Input> input {nullptr};
 
 class Color4
 {
+private:
   constexpr static uint8_t i_lo {0};
   constexpr static uint8_t i_hi {255};
   constexpr static float f_lo {0.f};
   constexpr static float f_hi {1.f};
 
 public:
-  Color4() : _fr{0.f}, _fg{0.f}, _fb{0.f}, _fa{0.f}, _ir{0}, _ig{0}, _ib{0}, _ia{0}{}
+  Color4() : _r{0}, _g{0}, _b{0}{}
 
   constexpr Color4(float r, float g, float b, float a = 0.f) : 
-    _fr{std::clamp(r, f_lo, f_hi)},
-    _fg{std::clamp(g, f_lo, f_hi)},
-    _fb{std::clamp(b, f_lo, f_hi)},
-    _fa{std::clamp(a, f_lo, f_hi)},
-    _ir{static_cast<uint8_t>(_fr * 255)},
-    _ig{static_cast<uint8_t>(_fg * 255)},
-    _ib{static_cast<uint8_t>(_fb * 255)},
-    _ia{static_cast<uint8_t>(_fa * 255)}
+    _r{static_cast<uint8_t>(std::clamp(r, f_lo, f_hi) * 255)},
+    _g{static_cast<uint8_t>(std::clamp(g, f_lo, f_hi) * 255)},
+    _b{static_cast<uint8_t>(std::clamp(b, f_lo, f_hi) * 255)},
+    _a{static_cast<uint8_t>(std::clamp(a, f_lo, f_hi) * 255)}
   {}
 
   constexpr Color4(uint8_t r, uint8_t g, uint8_t b, uint8_t a = 0) :
-    _ir{std::clamp(r, i_lo, i_hi)},
-    _ig{std::clamp(g, i_lo, i_hi)},
-    _ib{std::clamp(b, i_lo, i_hi)},
-    _ia{std::clamp(a, i_lo, i_hi)},
-    _fr{std::clamp(_ir / 255.f, f_lo, f_hi)},   // clamp to snip any floating point errors.
-    _fg{std::clamp(_ir / 255.f, f_lo, f_hi)},
-    _fb{std::clamp(_ir / 255.f, f_lo, f_hi)},
-    _fa{std::clamp(_ir / 255.f, f_lo, f_hi)}
+    _r{r},
+    _g{g},
+    _b{b},
+    _a{a}
   {}
 
   Color4(const Color4&) = default;
@@ -310,27 +303,24 @@ public:
   Color4& operator=(const Color4&) = default;
   Color4& operator=(Color4&&) = default;
 
-  float getfRed() const {return _fr;}
-  float getfGreen() const {return _fg;}
-  float getfBlue() const {return _fb;}
-  float getfAlpha() const {return _fa;}
-  uint8_t getiRed() const {return _ir;}
-  uint8_t getiGreen() const {return _ig;}
-  uint8_t getiBlue() const {return _ib;}
-  uint8_t getiAlpha() const {return _ia;}
-  void setRed(float r){_fr = std::clamp(r, f_lo, f_hi);}
-  void setGreen(float g){_fg = std::clamp(g, f_lo, f_hi);}
-  void setBlue(float b){_fb = std::clamp(b, f_lo, f_hi);}
+  void setRed(uint8_t r){_r = r;}
+  void setGreen(uint8_t g){_g = g;}
+  void setBlue(uint8_t b){_b = b;}
+  void setAlpha(uint8_t a){_a = a;}
+  uint8_t getRed() const {return _r;}
+  uint8_t getGreen() const {return _g;}
+  uint8_t getBlue() const {return _b;}
+  uint8_t getAlpha() const {return _a;}
+  float getfRed() const {return std::clamp(_r / 255.f, f_lo, f_hi);}    // clamp to cut-off float math errors.
+  float getfGreen() const {return std::clamp(_g / 255.f, f_lo, f_hi);}
+  float getfBlue() const {return std::clamp(_b / 255.f, f_lo, f_hi);}
+  float getfAlpha() const {return std::clamp(_a / 255.f, f_lo, f_hi);}
 
 private:
-  float _fr;
-  float _fg;
-  float _fb;
-  float _fa;
-  uint8_t _ir;
-  uint8_t _ig;
-  uint8_t _ib;
-  uint8_t _ia;
+  uint8_t _r;
+  uint8_t _g;
+  uint8_t _b;
+  uint8_t _a;
 };
 
 namespace colors
@@ -487,6 +477,52 @@ Vector2i Renderer::getWindowSize() const
 
 std::unique_ptr<Renderer> renderer {nullptr};
 
+// A sprite represents a color image that can be drawn on a virtual screen. Pixels on the sprite
+// are positioned on a coordinate space mapped as shown below.
+//
+//         row
+//          ^
+//          |
+//          |
+//   origin o----> col
+//
+class Sprite
+{
+public:
+  Sprite();
+  Sprite(std::vector<Color4> pixels, int width, int height);
+  ~Sprite() = default;
+  Sprite(const Sprite&) = default;
+  Sprite(Sprite&&) = default;
+  Sprite& operator=(const Sprite&) = default;
+  Sprite& operator=(Sprite&&) = default;
+  void setPixel(int row, int col, const Color4& color);
+  const std::vector<Color4>& getPixels() const {return _pixels;}
+  int getWidth() const {return _width;}
+  int getHeight() const {return _height;}
+private:
+  std::vector<Color4> _pixels;
+  int _width;
+  int _height;
+};
+
+Sprite::Sprite() :
+  _pixels{},
+  _width{0},
+  _height{0}
+{}
+
+Sprite::Sprite(std::vector<Color4> pixels, int width, int height) : 
+  _width{width},
+  _height{height},
+  _pixels{pixels}
+{}
+
+void Sprite::setPixel(int row, int col, const Color4& color)
+{
+  _pixels[col + (row * _width)] = color;
+}
+
 // A virtual screen with fixed resolution independent of display resolution and window size. The
 // screen is positioned centrally in the window with the ratio of virtual pixel size to real
 // pixel size being calculated to fit the window dimensions.
@@ -509,17 +545,15 @@ public:
   ~Screen() = default;
   void clear(const Color4& color);
   void clear(iRect region, const Color4& color);
+  void drawPixel(int row, int col, const Color4& color);
+  void drawSprite(int x, int y, const Sprite& sprite);
   void rescalePixels(Vector2i windowSize);
-  void draw();
-  void setPixel(int row, int col, const Color4& color);
+  void render();
 private:
   // 12 byte pixels designed to work with glInterleavedArrays format GL_C4UB_V2F.
   struct Pixel
   {
-    uint8_t _red;
-    uint8_t _green;
-    uint8_t _blue;
-    uint8_t _alpha;
+    Color4 _color;
     float _x;
     float _y;
   };
@@ -535,63 +569,53 @@ private:
 
 Screen::Screen(Vector2i windowSize)
 {
-  int pixelWidth = windowSize._x / screenWidth; 
-  int pixelHeight = windowSize._y / screenHeight;
-  _pixelSize = std::min(pixelWidth, pixelHeight);
-  if(_pixelSize == 0)
-    _pixelSize = 1;
-  int pixelCenterOffset = _pixelSize / 2;
-  _position._x = std::clamp((windowSize._x - (_pixelSize * screenWidth)) / 2, 0, windowSize._x);
-  _position._y = std::clamp((windowSize._y - (_pixelSize * screenHeight)) / 2, 0, windowSize._y);
-  for(int col = 0; col < screenWidth; ++col){
-    for(int row = 0; row < screenHeight; ++row){
-      int index = col + (row * screenWidth);
-      Pixel& pixel = _pixels[index];
-      pixel._red = 0;
-      pixel._green = 0;
-      pixel._blue = 0;
-      pixel._alpha = 0;
-      pixel._x = _position._x + (col * _pixelSize) + pixelCenterOffset;
-      pixel._y = _position._y + (row * _pixelSize) + pixelCenterOffset;
-    }
-  }
-}
-
-void Screen::setPixel(int row, int col, const Color4& color)
-{
-  assert(0 <= row && row < screenHeight);
-  assert(0 <= col && col < screenWidth);
-  int index = col + (row * screenWidth);
-  Pixel& pixel = _pixels[index];
-  pixel._red = color.getiRed();
-  pixel._green = color.getiGreen();
-  pixel._blue = color.getiBlue();
-  pixel._alpha = color.getiAlpha();
+  rescalePixels(windowSize);
 }
 
 void Screen::clear(const Color4& color)
 {
-  uint8_t r, g, b, a;
-  r = color.getiRed();
-  g = color.getiGreen();
-  b = color.getiBlue();
-  a = color.getiAlpha();
-  for(int col = 0; col < screenWidth; ++col){
-    for(int row = 0; row < screenHeight; ++row){
-      int index = col + (row * screenWidth);
-      Pixel& pixel = _pixels[index];
-      pixel._red = r;
-      pixel._green = g;
-      pixel._blue = b;
-      pixel._alpha = a;
-    }
-  }
+  for(auto& pixel : _pixels)
+    pixel._color = color;
 }
 
 void Screen::clear(iRect region, const Color4& color)
 {
 
 } 
+
+void Screen::drawPixel(int row, int col, const Color4& color)
+{
+  assert(0 <= row && row < screenHeight);
+  assert(0 <= col && col < screenWidth);
+  _pixels[col + (row * screenWidth)]._color = color;
+}
+
+void Screen::drawSprite(int x, int y, const Sprite& sprite)
+{
+  assert(x >= 0 && y >= 0);
+
+  const std::vector<Color4>& spritePixels {sprite.getPixels()};
+  int spriteWidth {sprite.getWidth()};
+  int spriteHeight {sprite.getHeight()};
+  
+  int spritePixelNum {0};
+  for(int spriteRow = 0; spriteRow < spriteHeight; ++spriteRow){
+    // if next row is above the screen.
+    if(y + spriteRow >= screenHeight)
+      break;
+
+    // index of 1st screen pixel in next row being drawn.
+    int screenRowIndex {x + ((y + spriteRow) * screenWidth)};   
+
+    for(int spriteCol = 0; spriteCol < spriteWidth; ++spriteCol){
+      // if the right side of the sprite falls outside the screen.
+      if(x + spriteCol >= screenWidth)
+        break;
+
+      _pixels[screenRowIndex + spriteCol]._color = spritePixels[spritePixelNum];  
+    }
+  }
+}
 
 void Screen::rescalePixels(Vector2i windowSize)
 {
@@ -613,12 +637,12 @@ void Screen::rescalePixels(Vector2i windowSize)
   }
 }
 
-void Screen::draw()
+void Screen::render()
 {
   auto now0 = std::chrono::high_resolution_clock::now();
   sk::renderer->drawPixelArray(0, pixelCount, static_cast<void*>(_pixels.data()), _pixelSize);
   auto now1 = std::chrono::high_resolution_clock::now();
-  std::cout << "Screen::draw execution time (us): "
+  std::cout << "Screen::render execution time (us): "
             << std::chrono::duration_cast<std::chrono::microseconds>(now1 - now0).count()
             << std::endl;
 }
@@ -636,15 +660,29 @@ public:
   ~Snake() = default;
   void draw();
 private:
+  Sprite _happyFace;
 };
 
-Snake::Snake()
+Snake::Snake() :
+  _happyFace{std::move(std::vector<Color4>{
+        colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow,
+        colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow,
+        colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow,
+        colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow,
+        colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow,
+        colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow,
+        colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow,
+        colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow,
+      }),
+      8,
+      8}
 {
 }
 
 void Snake::draw()
 {
   sk::screen->clear(colors::gainsboro);
+  sk::screen->drawSprite(30, 30, _happyFace);
 }
 
 //------------------------------------------------------------------------------------------------
@@ -843,7 +881,7 @@ void App::onTick(float dt)
 {
   sk::renderer->clearWindow(colors::jet);
   _game.draw();
-  sk::screen->draw();
+  sk::screen->render();
   sk::renderer->show();
 }
 
