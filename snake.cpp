@@ -276,20 +276,11 @@ std::unique_ptr<Input> input {nullptr};
 class Color4
 {
 private:
-  constexpr static uint8_t i_lo {0};
-  constexpr static uint8_t i_hi {255};
   constexpr static float f_lo {0.f};
   constexpr static float f_hi {1.f};
 
 public:
-  Color4() : _r{0}, _g{0}, _b{0}{}
-
-  constexpr Color4(float r, float g, float b, float a = 0.f) : 
-    _r{static_cast<uint8_t>(std::clamp(r, f_lo, f_hi) * 255)},
-    _g{static_cast<uint8_t>(std::clamp(g, f_lo, f_hi) * 255)},
-    _b{static_cast<uint8_t>(std::clamp(b, f_lo, f_hi) * 255)},
-    _a{static_cast<uint8_t>(std::clamp(a, f_lo, f_hi) * 255)}
-  {}
+  Color4() : _r{0}, _g{0}, _b{0}, _a{0}{}
 
   constexpr Color4(uint8_t r, uint8_t g, uint8_t b, uint8_t a = 0) :
     _r{r},
@@ -325,26 +316,26 @@ private:
 
 namespace colors
 {
-constexpr Color4 white {1.f, 1.f, 1.f};
-constexpr Color4 black {0.f, 0.f, 0.f};
-constexpr Color4 red {1.f, 0.f, 0.f};
-constexpr Color4 green {0.f, 1.f, 0.f};
-constexpr Color4 blue {0.f, 0.f, 1.f};
-constexpr Color4 cyan {0.f, 1.f, 1.f};
-constexpr Color4 magenta {1.f, 0.f, 1.f};
-constexpr Color4 yellow {1.f, 1.f, 0.f};
+constexpr Color4 white {255, 255, 255};
+constexpr Color4 black {0, 0, 0};
+constexpr Color4 red {255, 0, 0};
+constexpr Color4 green {0, 255, 0};
+constexpr Color4 blue {0, 0, 255};
+constexpr Color4 cyan {0, 255, 255};
+constexpr Color4 magenta {255, 0, 255};
+constexpr Color4 yellow {255, 255, 0};
 
 // greys - more grays: https://en.wikipedia.org/wiki/Shades_of_gray 
 
-constexpr Color4 gainsboro {0.88f, 0.88f, 0.88f};
-constexpr Color4 lightgray {0.844f, 0.844f, 0.844f};
-constexpr Color4 silver {0.768f, 0.768f, 0.768f};
-constexpr Color4 mediumgray {0.76f, 0.76f, 0.76f};
-constexpr Color4 spanishgray {0.608f, 0.608f, 0.608f};
-constexpr Color4 gray {0.512f, 0.512f, 0.512f};
-constexpr Color4 dimgray {0.42f, 0.42f, 0.42f};
-constexpr Color4 davysgray {0.34f, 0.34f, 0.34f};
-constexpr Color4 jet {0.208f, 0.208f, 0.208f};
+constexpr Color4 gainsboro {224, 224, 224};
+//constexpr Color4 lightgray {0.844f, 0.844f, 0.844f};
+//constexpr Color4 silver {0.768f, 0.768f, 0.768f};
+//constexpr Color4 mediumgray {0.76f, 0.76f, 0.76f};
+//constexpr Color4 spanishgray {0.608f, 0.608f, 0.608f};
+//constexpr Color4 gray {0.512f, 0.512f, 0.512f};
+//constexpr Color4 dimgray {0.42f, 0.42f, 0.42f};
+//constexpr Color4 davysgray {0.34f, 0.34f, 0.34f};
+constexpr Color4 jet {53, 53, 53};
 };
 
 class Renderer
@@ -613,6 +604,7 @@ void Screen::drawSprite(int x, int y, const Sprite& sprite)
         break;
 
       _pixels[screenRowIndex + spriteCol]._color = spritePixels[spritePixelNum];  
+      ++spritePixelNum;
     }
   }
 }
@@ -656,33 +648,54 @@ std::unique_ptr<Screen> screen {nullptr};
 class Snake
 {
 public:
+  enum ColorID { 
+    COLOR_WORLD_BACKGROUND,
+    COLOR_SNAKE_BODY_LIGHT,
+    COLOR_SNAKE_BODY_SHADED,
+    COLOR_SNAKE_BODY_SHADOW,
+    COLOR_SNAKE_EYES,
+    COLOR_SNAKE_TONGUE,
+    COLOR_SNAKE_SPOTS
+  };
+public:
   Snake();
   ~Snake() = default;
   void draw();
 private:
-  Sprite _happyFace;
+  void generateSprites();
+private:
+  std::vector<Color4> _palette;
+
+  // Sprite assets.
+  std::vector<Sprite> _snakeSprites;
 };
 
-Snake::Snake() :
-  _happyFace{std::move(std::vector<Color4>{
-        colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow,
-        colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow,
-        colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow,
-        colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow,
-        colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow,
-        colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow,
-        colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow,
-        colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow, colors::yellow,
-      }),
-      8,
-      8}
+Snake::Snake()
 {
+  _palette.push_back(colors::jet);
+  _palette.push_back(Color4(255, 217,  0));
+  _palette.push_back(Color4(172, 146,  0));
+  _palette.push_back(Color4( 42,  42, 42));
+  _palette.push_back(Color4(214,   0,  0));
+  _palette.push_back(Color4(214,   0,  0));
+  _palette.push_back(Color4(  4,  69,  0));
+
+  generateSprites();
+}
+
+void Snake::generateSprites()
+{
+  const std::vector<Color4>& p = _palette;
+
+  _snakeSprites.push_back({{p[3], p[3], p[3], p[3], p[2], p[2], p[2], p[2], p[1], p[1], p[1], 
+                            p[1], p[6], p[1], p[1], p[1]}, 4, 4});
+
 }
 
 void Snake::draw()
 {
   sk::screen->clear(colors::gainsboro);
-  sk::screen->drawSprite(30, 30, _happyFace);
+  sk::screen->drawSprite(30, 30, _snakeSprites[0]);
 }
 
 //------------------------------------------------------------------------------------------------
