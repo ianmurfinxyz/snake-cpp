@@ -648,6 +648,273 @@ std::unique_ptr<Screen> screen {nullptr};
 class Snake
 {
 public:
+  enum MoveDirection { NORTH, SOUTH, EAST, WEST };
+  enum MoveAxis { HORIZONTAL = 0, VERTICAL = 1 };
+  enum MoveMagnitude { NEGATIVE = -1, POSITIVE = 1 };
+
+  enum SegmentType { 
+    BODY_EW, BODY_WE, BODY_NS, BODY_SN, CORNER_EN, CORNER_NE, CORNER_WN, CORNER_NW, CORNER_ES, 
+    CORNER_SE, CORNER_WS, CORNER_SW, HEAD_E, HEAD_W, HEAD_N, HEAD_S, TAIL_E, TAIL_W, TAIL_N, 
+    TAIL_S 
+  };
+
+  struct Segment
+  {
+    Vector2i _position;         // [x:col, y:row] w.r.t block world.
+    MoveDirection _direction;   // segment's local direction of movement (seperate to the snake).
+    SegmentType _type;          // used to draw the snake correctly (to select sprites).
+  };
+
+public:
+  Snake(Vector2i worldDimensions, Vector2i);
+  ~Snake() = default;
+  void update(float dt);
+  void setMoveDirection(MoveDirection direction);
+
+private:
+  static constexpr float moveFrequency {2.f};             // unit: move (block) jumps per second.
+  static constexpr float movePeriod {1 / moveFrequency};
+  static constexpr int appetite {1};                      // nuggets eaten until full (until grow).
+
+private:
+  void doMove();
+  void calculateSegmentMoveDirection(Segment& segment, Vector2i oldPosition, Vector2i newPosition);
+  void recalculateSegmentTypes();
+
+private:
+  std::vector<Segment> _segments;
+  Vector2i _worldDimensions;
+  MoveAxis _moveAxis;
+  MoveMagnitude _moveMagnitude;
+  float _moveClock;
+  int _nuggetsEaten;
+};
+
+void Snake::update(float dt)
+{
+  _moveClock += dt;
+  if(_moveClock > movePeriod){
+    _moveClock = 0;
+    doMove();
+  }
+}
+
+void Snake::doMove()
+{
+  // move head segment.
+  Segment& head = _segments[0];
+  Vector2i oldPosition = head._position;
+  head._position._x += (_moveAxis == HORIZONTAL) ? _moveMagnitude : 0;
+  head._position._y += (_moveAxis == VERTICAL) ? _moveMagnitude : 0;
+  calculateSegmentMoveDirection(head, oldPosition, head._position); 
+
+  // wrap head around world if exceed world bounds.
+  if(head._position._x < 0)
+    head._position._x = _worldDimensions._x - 1;
+  else if(head._position._x >= _worldDimensions._x - 1)
+    head._position._x = 0;
+  else if(head._position._y < 0)
+    head._position._y = _worldDimensions._y - 1;
+  else if(head._position._y >= _worldDimensions._y - 1)
+    head._position._y = 0;
+
+  // shift body segments.
+  for(int i = 1; i < _segments.size(); ++i){
+    Segment& segment = _segments[i];
+    Vector2i temp = segment._position;
+    segment._position = oldPosition;
+    calculateSegmentMoveDirection(segment, temp, segment._position); 
+    oldPosition = temp;
+  }
+
+  // add a segment if snake is full of nuggets.
+  if(_neggetsEaten == appetite){
+    Segment newTail {};
+    newTail._position = oldPosition;
+
+    // uses the old tail's old position (oldPosition) and the old tail's new position.
+    calculateSegmentMoveDirection(segment, oldPosition, _segments.back()._position); 
+
+    _segments.push_back(newTail);
+  }
+
+  // ensures the drawing reflects the change in snake position.
+  recalculateSegmentTypes();
+}
+
+void Snake::calculateSegmentMoveDirection(Segment& segment, Vector2i oldPosition, Vector2i newPosition)
+{
+  int deltaRow = newPosition._y - oldPosition._y;
+  int deltaCol = newPosition._x - oldPosition._x;
+
+  // Segments (except the head) shift into the position of their neighbour which is closest to 
+  // the head, this pattern of movement will always satisfy the below conditions. Thus if these
+  // conditions are not met then the snake is dancing something funky!
+  assert(-1 >= deltaRow && deltaRow <= 1);
+  assert(-1 >= deltaCol && deltaCol <= 1);
+  assert(deltaRow == 0 || deltaCol == 0);
+  assert(deltaRow != deltaCol);
+
+  MoveDirection direction;
+  if(deltaRow != 0)
+    direction = (deltaRow == 1) ? NORTH : SOUTH;
+  else
+    direction = (deltaRow == 1) ? NORTH : SOUTH;
+
+  segment._moveDirection = direction;
+}
+
+void Snake::recalculateSegmentTypes()
+{
+  // calculate head type.
+  switch(_segments.front()._moveDirection)
+  {
+  case NORTH:
+    _segments.front()._type = HEAD_N;
+    break;
+  case SOUTH:
+    _segments.front()._type = HEAD_S;
+    break;
+  case EAST:
+    _segments.front()._type = HEAD_E;
+    break;
+  case WEST:
+    _segments.front()._type = HEAD_W;
+    break;
+  };
+
+  // calculate tail type.
+  switch(_segments.back()._moveDirection)
+  {
+  case NORTH:
+    _segments.back()._type = TAIL_N;
+    break;
+  case SOUTH:
+    _segments.back()._type = TAIL_S;
+    break;
+  case EAST:
+    _segments.back()._type = TAIL_E;
+    break;
+  case WEST:
+    _segments.back()._type = TAIL_W;
+    break;
+  };
+
+  // calculate types of all body segments.
+  Segment dummy;
+  for(int i = 1; i < _segments.size() - 1; ++i){
+    Segment& thisSegment = _segments[i];
+
+    Vector2i thisPosition = thisSegment._position;
+    Vector2i headNeighbourPosition = _segments[i - 1]._position;
+    Vector2i tailNeighbourPosition = _segments[i + 1]._position;
+
+    MoveDirection directionToHead, directionToTail;
+    calculateSegmentMoveDirection(dummy, thisPosition, headNeighbourPosition);
+    directionToHead = dummy._moveDirection;
+    calculateSegmentMoveDirection(dummy, thisPosition, tailNeighbourPosition);
+    directionToTail = dummy._moveDirection;
+
+    switch(directionToHead)
+    {
+    case NORTH:
+      switch(directionToTail)
+      {
+        case NORTH:
+          assert(0);
+          break;
+        case SOUTH:
+          thisSegment._type = BODY_SN;
+          break;
+        case EAST:
+          thisSegment._type = CORNER_EN;
+          break;
+        case WEST:
+          thisSegment._type = CORNER_WN;
+          break;
+      }
+      break;
+    case SOUTH:
+      switch(directionToTail)
+      {
+        case NORTH:
+          thisSegment._type = BODY_NS;
+          break;
+        case SOUTH:
+          assert(0);
+          break;
+        case EAST:
+          thisSegment._type = CORNER_ES;
+          break;
+        case WEST:
+          thisSegment._type = CORNER_WS;
+          break;
+      }
+      break;
+    case EAST:
+      switch(directionToTail)
+      {
+        case NORTH:
+          thisSegment._type = CORNER_NE;
+          break;
+        case SOUTH:
+          thisSegment._type = CORNER_SE;
+          break;
+        case EAST:
+          assert(0);
+          break;
+        case WEST:
+          thisSegment._type = BODY_WE;
+          break;
+      }
+      break;
+    case WEST:
+      switch(directionToTail)
+      {
+        case NORTH:
+          thisSegment._type = CORNER_NW;
+          break;
+        case SOUTH:
+          thisSegment._type = CORNER_SW;
+          break;
+        case EAST:
+          thisSegment._type = BODY_EW;
+          break;
+        case WEST:
+          assert(0);
+          break;
+      }
+      break;
+    }
+  }
+}
+
+void Snake::setMoveDirection(MoveDirection direction)
+{
+  switch(direction)
+  {
+  case SOUTH:
+    _moveAxis = VERTICAL;
+    _moveMagnitude = NEGATIVE;
+    break;
+  case north:
+    _moveAxis = VERTICAL;
+    _moveMagnitude = POSITIVE;
+    break;
+  case east:
+    _moveAxis = HORIZONTAL;
+    _moveMagnitude = POSITIVE;
+    break;
+  case west:
+    _moveAxis = HORIZONTAL;
+    _moveMagnitude = NEGATIVE;
+    break;
+  }
+}
+
+class Game
+{
+public:
   enum ColorID { 
     COLOR_WORLD_BACKGROUND,
     COLOR_SNAKE_BODY_LIGHT,
@@ -658,9 +925,11 @@ public:
     COLOR_SNAKE_SPOTS
   };
 public:
-  Snake();
-  ~Snake() = default;
+  Game();
+  ~Game() = default;
   void draw();
+private:
+  static constexpr Vector2i worldDimensions {50, 50}; // [x:width(num cols), y:height(num rows)]
 private:
   void generateSprites();
 private:
