@@ -1,8 +1,9 @@
 #include <string>
+#include <cstring>
 #include <cinttypes>
 
 static const char* bitmapFileMagic {0x4d4d};
-
+static const char* colorSpaceSRGBMagic {0x73524742};
 void reverseBytes(uint8* bytes, int count)
 {
   int swaps = ((count % 2) == 1) : (count - 1) / 2 : count / 2;
@@ -74,9 +75,6 @@ using extractLittleEndianInt64 = extractLittleEndian<int64_t>;
 // note: I am choosing NOT to pack these structs for use with reading binary data from a stream;
 // struct packing can lead to problems on certain platforms. Read binary data into arrays and
 // extract the data manually.
-// references: 
-// [0] https://medium.com/sysf/bits-to-bitmaps-a-simple-walkthrough-of-bmp-image-format-765dc6857393)
-// [1] https://devblogs.microsoft.com/oldnewthing/20200103-00/?p=103290
 
 struct BitmapFileHeader
 {
@@ -89,129 +87,102 @@ struct BitmapFileHeader
   uint32_t _pixelOffset;
 };
 
-// note: There are multiple versions of the DIB header of BMP files identified by their header
-// size. This module supports: BITMAPINFOHEADER, BITMAPV2INFOHEADER, BITMAPV3INFOHEADER,
-// BITMAPV4HEADER, BITMAPV5HEADER. It does not support OS2 headers.
+// There are multiple versions of the info (DIB) header of BMP files identified by their 
+// header size. This module supports: BITMAPCOREHEADER, BITMAPINFOHEADER, BITMAPV2INFOHEADER, 
+// BITMAPV3INFOHEADER, BITMAPV4HEADER, BITMAPV5HEADER. It does not support OS2 headers.
+//
+// note: each version extends the last rather than revising it thus all versions have been
+// combined here into a single version (effectively the latest).
+//
+// note: the version BITMAPINFOHEADER is apparantly the commonly used version by software
+// seeking to maintain backwards compatibility.
+//
+// For more information on the bitmap file format see references.
+//
 // references:
 // [0] https://en.wikipedia.org/wiki/BMP_file_format
+// [1] https://solarianprogrammer.com/2018/11/19/cpp-reading-writing-bmp-images/
+// [2] https://medium.com/sysf/bits-to-bitmaps-a-simple-walkthrough-of-bmp-image-format-765dc6857393
 
 struct BitmapInfoHeader
 {
-  static constexpr int size_bytes {40};
-
+  // -- BITMAPCOREHEADER --
+  
+  static constexpr int BITMAPCOREHEADER_SIZE_BYTES {12};
+  
   uint32_t _headerSize_bytes;
   uint32_t _bmpWidth_px;
   uint32_t _bmpHeight_px;
   uint16_t _numColorPlanes;
   uint16_t _bitsPerPixel; 
+
+  // -- added BITMAPINFOHEADER --
+
+  static constexpr int BITMAPINFOHEADER_SIZE_BYTES {40};
+
   uint32_t _compression; 
   uint32_t _rawImageSize_bytes;
   uint32_t _horizontalResolution_pxPm;
   uint32_t _verticalResolution_pxPm;
   uint32_t _numPaletteColors;
   uint32_t _numImportantColors;
-};
 
-struct BitmapV2InfoHeader
-{
-  static constexpr int size_bytes {52};
+  // -- added BITMAPV2INFOHEADER --
 
-  uint32_t _headerSize_bytes;
-  uint32_t _bmpWidth_px;
-  uint32_t _bmpHeight_px;
-  uint16_t _numColorPlanes;
-  uint16_t _bitsPerPixel; 
-  uint32_t _compression; 
-  uint32_t _rawImageSize_bytes;
-  uint32_t _horizontalResolution_pxPm;
-  uint32_t _verticalResolution_pxPm;
-  uint32_t _numPaletteColors;
-  uint32_t _numImportantColors;
+  static constexpr int BITMAPV2INFOHEADER_SIZE_BYTES {52};
+  
   uint32_t _redMask;
   uint32_t _greenMask;
   uint32_t _blueMask;
-};
 
-struct BitmapV3InfoHeader
-{
-  static constexpr int size_bytes {56};
+  // -- added BITMAPV3INFOHEADER --
+  
+  static constexpr int BITMAPV3INFOHEADER_SIZE_BYTES {56};
 
-  uint32_t _headerSize_bytes;
-  uint32_t _bmpWidth_px;
-  uint32_t _bmpHeight_px;
-  uint16_t _numColorPlanes;
-  uint16_t _bitsPerPixel; 
-  uint32_t _compression; 
-  uint32_t _rawImageSize_bytes;
-  uint32_t _horizontalResolution_pxPm;
-  uint32_t _verticalResolution_pxPm;
-  uint32_t _numPaletteColors;
-  uint32_t _numImportantColors;
-  uint32_t _redMask;
-  uint32_t _greenMask;
-  uint32_t _blueMask;
   uint32_t _alphaMask;
-};
 
-struct BitmapV4Header
-{
-  static constexpr int size_bytes {108};
+  // -- added BITMAPV4HEADER --
 
-  uint32_t _headerSize_bytes;
-  uint32_t _bmpWidth_px;
-  uint32_t _bmpHeight_px;
-  uint16_t _numColorPlanes;
-  uint16_t _bitsPerPixel; 
-  uint32_t _compression; 
-  uint32_t _rawImageSize_bytes;
-  uint32_t _horizontalResolution_pxPm;
-  uint32_t _verticalResolution_pxPm;
-  uint32_t _numPaletteColors;
-  uint32_t _numImportantColors;
-  uint32_t _redMask;
-  uint32_t _greenMask;
-  uint32_t _blueMask;
-  uint32_t _alphaMask;
+  static constexpr int BITMAPV4HEADER_SIZE_BYTES {108};
+
   uint32_t _colorSpaceMagic;
-  uint32_t _unused[12];
+  uint32_t _unused0[12];
+
+  // -- added BITMAPV5HEADER --
+  
+  static constexpr int BITMAPV5HEADER_SIZE_BYTES {124};
+
+  uint32_t _unused1[4];
 };
 
-struct BitmapV5Header
+enum BitmapInfoHeaderOffsets
 {
-  static constexpr int size_bytes {124};
-
-  uint32_t _headerSize_bytes;
-  uint32_t _bmpWidth_px;
-  uint32_t _bmpHeight_px;
-  uint16_t _numColorPlanes;
-  uint16_t _bitsPerPixel; 
-  uint32_t _compression; 
-  uint32_t _rawImageSize_bytes;
-  uint32_t _horizontalResolution_pxPm;
-  uint32_t _verticalResolution_pxPm;
-  uint32_t _numPaletteColors;
-  uint32_t _numImportantColors;
-  uint32_t _redMask;
-  uint32_t _greenMask;
-  uint32_t _blueMask;
-  uint32_t _alphaMask;
-  uint32_t _colorSpaceMagic;
-  uint32_t _unused[16];
+  BIHO_HEADER_SIZE = 0,
+  BIHO_BMP_WIDTH = 4,
+  BIHO_BMP_HEIGHT = 8,
+  BIHO_NUM_COLOR_PLANES = 12,
+  BIHO_BITS_PER_PIXEL = 14,
+  BIHO_COMPRESSION = 16,
+  BIHO_RAW_IMAGE_SIZE = 20,
+  BIHO_HORIZONTAL_RESOLUTION = 24,
+  BIHO_VERTICAL_RESOLUTION = 28,
+  BIHO_NUM_PALETTE_COLORS = 32,
+  BIHO_NUM_IMPORTANT_COLORS = 36,
+  BIHO_RED_MASK = 40,
+  BIHO_GREEN_MASK = 44,
+  BIHO_BLUE_MASK = 48,
+  BIHO_ALPHA_MASK = 52,
+  BIHO_COLOR_SPACE_MAGIC = 56
 };
 
-// note: most of these compression formats are not supported by this module. Only BI_RGB (no
-// compression) and BI_BITFIELDS (bit field masks) are supported. 
-// references: 
-// [0] https://en.wikipedia.org/wiki/BMP_file_format#Pixel_storage
+// note: most of these compression formats are not supported by this loader. Only BI_RGB (no
+// compression) and BI_BITFIELDS (bit field masks) are supported, RLE (run-length-encoding)
+// modes are not supported.
 enum BitmapFileCompressionMode
 {
   BI_RGB, BI_RLE8, BI_RLE4, BI_BITFIELDS, BI_JPEG, BI_PNG, BI_ALPHABITFIELDS, BI_CMYK = 11,
   BI_CMYKRLE8, BI_CMYKRLE4
 };
-
-// The common header contains every member of all header versions. Each successive version
-// adds members to the last thus the common header is the latest version.
-using BitmapCommonInfoHeader = BitmapV5Header;
 
 class BmpImage
 {
@@ -219,13 +190,11 @@ public:
   int load(std::string filename);
 private:
   void extractFileHeader(std::ifstream& file, BitmapFileHeader& header);
-  void extractFileInfoHeaderSize(std::ifstream& file);
-  void extractBitmapInfoHeader(std::ifstream& file, BitmapCommonInfoHeader& header);
-  void extractBitmapV2InfoHeader(std::ifstream& file, BitmapCommonInfoHeader& header);
-  void extractBitmapV3InfoHeader(std::ifstream& file, BitmapCommonInfoHeader& header);
-  void extractBitmapV4Header(std::ifstream& file, BitmapCommonInfoHeader& header);
-  void extractBitmapV5Header(std::ifstream& file, BitmapCommonInfoHeader& header);
-  void extractColorPalette(std::ifstream& file, BitmapCommonInfoHeader& header);
+  void extractInfoHeader(std::ifstream& file, BitmapInfoHeader& header);
+  void extractAppendedRGBMasks(std::ifstream& file, BitmapInfoHeader& header);
+  void extractColorPalette(std::ifstream& file, BitmapInfoHeader& header);
+  void extractPalettedPixels();
+  void extractPixels(std::ifstream& file, BitmapInfoHeader* header);
 private:
   std::vector<Color4> _pallete;
 };
@@ -243,69 +212,102 @@ int BmpImage::load(std::string filename)
     return -1;
   }
 
-  BitmapCommonInfoHeader infoHeader {};
-  uint32_t infoHeaderSize = extractFileInfoHeaderSize(file);
-  switch(infoHeaderSize)
+  BitmapInfoHeader infoHeader {};
+  memset(&infoHeader, 0, sizeof(infoHeader));
+  extractInfoHeader(file, infoHeader);
+
+  // other compression modes are not supported.
+  if(infoHeader._compression != BI_RGB || infoHeader._compression != BI_BITFIELDS){
+    return -1;
+  }
+
+  bool V2 {false}, V3_4_5 {false};
+  switch(infoHeader._headerSize)
   {
-  case BitmapInfoHeader::size_bytes:
-    extractBitmapInfoHeader(file, infoHeader);
+  case BitmapInfoHeader::BITMAPV5HEADER_SIZE_BYTES:
+
+    // fallthrough
+    
+  case BitmapInfoHeader::BITMAPV4HEADER_SIZE_BYTES:
+    // other color spaces not supported.
+    if(infoHeader._colorSpaceMagic != colorSpaceSRGBMagic){
+      return -1;
+    }
+
+    // fallthrough
+    
+  case BitmapInfoHeader::BITMAPV3INFOHEADER_SIZE_BYTES:
+    V3_4_5 = true;
+
+    // fallthrough
+    
+
+  case BitmapInfoHeader::BITMAPV2INFOHEADER_SIZE_BYTES:
+    if(!V3_4_5)
+      V2 = true;
+
+    // fallthrough
+    
+  case BitmapInfoHeader::BITMAPINFOHEADER_SIZE_BYTES:
     if(infoHeader._bitCount <= 8){
       extractColorPalette(file, infoHeader);
       extractPalettedPixels(file, infoHeader);
     }
     else if(infoHeader._bitCount == 16){
       if(infoHeader._compression == BI_RGB){
-        uint16_t rmask {};
-        uint16_t gmask {};
-        uint16_t bmask {};
-        uint16_t amask {};
-        extractRGBA16Pixels(file, infoHeader, rmask, gmask, bmask, amask);
+        // default masks for this scenario.
+        infoHeader._redMask   = 0b00000000000000000111110000000000;
+        infoHeader._greenMask = 0b00000000000000000000001111100000;
+        infoHeader._blueMask  = 0b00000000000000000000000000011111;
+
+        // BITMAPV3INFOHEADER uses set defaults for RGB masks but a custom alpha mask, thus we
+        // dont want to override this custom mask if V3 info header is present.
+        if(!V3_4_5)
+          infoHeader._alphaMask = 0b00000000000000001000000000000000;
+
+        extractPixels(file, infoHeader); 
       }
       if(infoHeader._compression == BI_BITFIELDS){
-        uint16_t rmask {};
-        uint16_t gmask {};
-        uint16_t bmask {};
-        uint16_t amask {};
+        // with BI_BITFIELDS and BITMAPINFOHEADER the masks are found appended to the end of 
+        // the info header in an extra block of 12 bytes rather than in the header itself.
+        if(!V2 && !V3_4_5)
+          extractAppendedRGBMasks(file, infoHeader);
 
+        extractPixels(file, infoHeader); 
       }
     }
     else if(infoHeader._bitCount == 24){
-
+      // default masks for this scenario.
+      infoHeader._redMask   = 0b00000000111111110000000000000000;
+      infoHeader._greenMask = 0b00000000000000001111111100000000;
+      infoHeader._blueMask  = 0b00000000000000000000000011111111;
+      infoHeader._alphaMask = 0b00000000000000000000000000000000;
+      extractPixels(file, infoHeader); 
     }
     else if(infoHeader._bitCount == 32){
+      if(infoHeader._compression == BI_RGB){
+        // default masks for this scenario.
+        infoHeader._redMask   = 0b00000000111111110000000000000000;
+        infoHeader._greenMask = 0b00000000000000001111111100000000;
+        infoHeader._blueMask  = 0b00000000000000000000000011111111;
 
+        // BITMAPV3INFOHEADER uses set defaults for RGB masks but a custom alpha mask, thus we
+        // dont want to override this custom mask if V3 info header is present.
+        if(!V3_4_5)
+          infoHeader._alphaMask = 0b11111111000000000000000000000000;
+
+        extractPixels(file, infoHeader); 
+      }
+      else if(info_header._compression == BI_BITFIELDS){
+        // with BI_BITFIELDS and BITMAPINFOHEADER the masks are found appended to the end of 
+        // the info header in an extra block of 12 bytes rather than in the header itself.
+        if(!V2 && !V3_4_5)
+          extractAppendedRGBMasks(file, infoHeader);
+
+        extractPixels(file, infoHeader); 
+      }
     }
-    break;
-  case BitmapV2InfoHeader::size_bytes:
-    extractBitmapV2InfoHeader(file, infoHeader);
-    break;
-  case BitmapV3InfoHeader::size_bytes:
-    extractBitmapV3InfoHeader(file, infoHeader);
-    break;
-  case BitmapV4Header::size_bytes:
-    extractBitmapV4Header(file, infoHeader);
-    break;
-  case BitmapV5Header::size_bytes:
-    extractBitmapV5Header(file, infoHeader);
-    break;
-  default:
-    return -1;
-  };
-
-  if(c && !(infoHeader._compression == BI_RGB || infoHeader._compression == BI_BITFIELDS)){
-    return -1;
   }
-
-  if(infoHeader._bitCount <= 8 && infoHeader._numPaletteColors == 0){
-
-  }
-
-  if((rgbm || am) && infoHeader._compression != BI_BITFIELDS){
-
-  }
-
-
-
 }
 
 void BmpImage::extractFileHeader(std::ifstream& file, BitmapFileHeader& header)
@@ -318,66 +320,83 @@ void BmpImage::extractFileHeader(std::ifstream& file, BitmapFileHeader& header)
   header._pixelOffset = extractLittleEndianUint32(bytes + 10);
 }
 
-uint32_t BmpImage::extractFileInfoHeaderSize(std::ifstream& file)
+void BmpImage::extractInfoHeader(std::ifstream& file, BitmapCommonInfoHeader& header)
 {
-  uint8_t bytes[4];
+  uint8_t bytes[BitmapInfoHeader::BITMAPINFOHEADER_SIZE_BYTES];
+
+  // start by reading the header size to determine the info header version present.
   file.seekg(BitmapFileHeader::size_bytes);
-  file.read(&bytes, 4);
-  return extractLittleEndianUint32(bytes);
+  file.read(&bytes, sizeof(BitmapFileHeader._headerSize)); 
+  header._headerSize = extractLittleEndianUint32(bytes);
+
+  int seekPos, readSize;
+  switch(header._headerSize)
+  {
+  case BitmapInfoHeader::BITMAPV5HEADER_SIZE_BYTES:
+  case BitmapInfoHeader::BITMAPV4HEADER_SIZE_BYTES:
+    seekPos = BitmapFileHeader::size_bytes + BIHO_COLOR_SPACE_MAGIC;
+    readSize = sizeof(BitmapInfoHeader::_colorSpaceMagic);
+    file.seekg(seekPos);
+    file.read(bytes, readSize);
+    header._colorSpaceMagic = extractLittleEndianUint32(bytes);
+
+    // fallthrough
+
+  case BitmapInfoHeader::BITMAPV3INFOHEADER_SIZE_BYTES:
+    seekPos = BitmapFileHeader::size_bytes + BIHO_ALPHA_MASK;
+    readSize = sizeof(BitmapInfoHeader::_alphaMask);
+    file.seekg(seekPos);
+    file.read(bytes, readSize);
+    header._alphaMask = extractLittleEndianUint32(bytes);
+
+    // fallthrough
+    
+  case BitmapInfoHeader::BITMAPV2INFOHEADER_SIZE_BYTES:
+    seekPos = BitmapFileHeader::size_bytes + BIHO_RED_MASK;
+    readSize = BIHO_ALPHA_MASK - BIHO_RED_MASK;
+    file.seekg(seekPos);
+    file.read(bytes, readSize);
+    header._redMask = extractLittleEndianUint32(bytes);
+    header._greenMask = extractLittleEndianUint32(bytes + 4);
+    header._blueMask = extractLittleEndianUint32(bytes + 8);
+
+    // fallthrough
+    
+  case BitmapInfoHeader::BITMAPINFOHEADER_SIZE_BYTES:
+    seekPos = BitmapFileHeader::size_bytes;
+    readSize = BitmapInfoHeader::BITMAPINFOHEADER_SIZE_BYTES;
+    file.seekg(seekPos);
+    file.read(bytes, readSize);
+    header._bmpWidth_px = extractLittleEndianUint32(bytes + BIHO_BMP_WIDTH);
+    header._bmpHeight_px = extractLittleEndianUint32(bytes + BIHO_BMP_HEIGHT);
+    header._numColorPlanes = extractLittleEndianUint16(bytes + BIHO_NUM_COLOR_PLANES);
+    header._bitsPerPixel = extractLittleEndianUint16(bytes + BIHO_BITS_PER_PIXEL);
+    header._compression = extractLittleEndianUint32(bytes + BIHO_COMPRESSION);
+    header._rawImageSize_bytes = extractLittleEndianUint32(bytes + BIHO_RAW_IMAGE_SIZE);
+    header._horizontalResolution_pxPm = extractLittleEndianUint32(bytes + BIHO_HORIZONTAL_RESOLUTION);
+    header._verticalResolution_pxPm = extractLittleEndianUint32(bytes + BIHO_VERTICAL_RESOLUTION);
+    header._numPaletteColors = extractLittleEndianUint32(bytes + BIHO_NUM_PALETTE_COLORS);
+    header._numImportantColors = extractLittleEndianUint32(bytes + BIHO_NUM_IMPORTANT_COLORS);
+  }
 }
 
-void BmpImage::extractBitmapInfoHeader(std::ifstream& file, BitmapCommonInfoHeader& header)
+void BmpImage::extractAppendedRGBMasks(std::ifstream& file, BitmapInfoHeader& header)
 {
-  uint8_t bytes[BitmapInfoHeader::size_bytes];
-  file.seekg(BitmapFileHeader::size_bytes);
-  file.read(&bytes, BitmapInfoHeader::size_bytes); 
-  header._headerSize_bytes = extractLittleEndianUint32(bytes);
-  header._bmpWidth_px = extractLittleEndianUint32(bytes + 4);
-  header._bmpHeight_px = extractLittleEndianUint32(bytes + 8);
-  header._numColorPlanes = extractLittleEndianUint16(bytes + 12);
-  header._bitsPerPixel = extractLittleEndianUint16(bytes + 14);
-  header._compression = extractLittleEndianUint32(bytes + 16);
-  header._rawImageSize_bytes = extractLittleEndianUint32(bytes + 20);
-  header._horizontalResolution_pxPm = extractLittleEndianUint32(bytes + 24);
-  header._verticalResolution_pxPm = extractLittleEndianUint32(bytes + 28);
-  header._numPaletteColors = extractLittleEndianUint32(bytes + 32);
-  header._numImportantColors = extractLittleEndianUint32(bytes + 36);
+
 }
 
-void BmpImage::extractBitmapV2InfoHeader(std::ifstream& file, BitmapCommonInfoHeader& header)
+void BmpImage::extractColorPalette(std::ifstream& file, BitmapInfoHeader& header)
 {
-  static constexpr int readSize_bytes = BitmapV2InfoHeader::size_bytes - BitmapInfoHeader::size_bytes;
 
-  extractBitmapInfoHeader(file, header);
-  uint8_t bytes[readSize_bytes];
-  file.read(&bytes, readSize_bytes);
-  header._redMask = extractLittleEndianUint32(bytes);
-  header._greenMask = extractLittleEndianUint32(bytes + 4);
-  header._blueMask = extractLittleEndianUint32(bytes + 4);
 }
 
-void BmpImage::extractBitmapV3InfoHeader(std::ifstream& file, BitmapCommonInfoHeader& header)
+void BmpImage::extractPalettedPixels()
 {
-  static constexpr int readSize_bytes = BitmapV3InfoHeader::size_bytes - BitmapV2InfoHeader::size_bytes;
 
-  extractBitmapV2InfoHeader(file, header);
-  uint8_t bytes[readSize_bytes];
-  file.read(&bytes, readSize_bytes);
-  header._alphaMask = extractLittleEndianUint32(bytes);
 }
 
-void BmpImage::extractBitmapV4Header(std::ifstream& file, BitmapCommonInfoHeader& header)
+void BmpImage::extractPixels(std::ifstream& file, BitmapInfoHeader* header)
 {
-  static constexpr int readSize_bytes = BitmapV4Header::size_bytes - BitmapV3InfoHeader::size_bytes;
 
-  extractBitmapV3InfoHeader(file, header);
-  uint8_t bytes[readSize_bytes];
-  file.read(&bytes, readSize_bytes);
-  header._colorSpaceMagic = extractLittleEndianUint32(bytes);
-}
-
-void BmpImage::extractBitmapV5Header(std::ifstream& file, BitmapCommonInfoHeader& header)
-{
-  extractBitmapV4Header(file, header);
 }
 
