@@ -2,6 +2,8 @@
 #include <cstring>
 #include <cinttypes>
 #include <cmath>
+#include <algorithm>
+#include <fstream>
 
 class Color4
 {
@@ -44,12 +46,13 @@ private:
   uint8_t _a;
 };
 
-static const char* bitmapFileMagic {0x4d4d};
-static const char* colorSpaceSRGBMagic {0x73524742};
-void reverseBytes(uint8* bytes, int count)
+static const uint32_t bitmapFileMagic {0x4d42};
+static const uint32_t colorSpaceSRGBMagic {0x73524742};
+
+void reverseBytes(char* bytes, int count)
 {
-  int swaps = ((count % 2) == 1) : (count - 1) / 2 : count / 2;
-  uint8_t tmp;
+  int swaps = ((count % 2) == 1) ? (count - 1) / 2 : count / 2;
+  char tmp;
   for(int i = 0; i < swaps; ++i){
     tmp = bytes[i]; 
     bytes[i] = bytes[count - 1 - i];
@@ -98,21 +101,54 @@ bool isSystemLittleEndian()
 
 // Extracts a type T from a byte buffer containing the bytes of T stored in little-endian 
 // format (in the buffer). The endianess of the system is accounted for.
-template<typename T>
-T extractLittleEndian(uint8_t* buffer)
-// predicate: buffer size is at least sizeof(T) bytes.
+
+uint16_t extractLittleEndianUint16(char* buffer)
+// predicate: buffer size is at least sizeof(uint16_t) bytes.
 {
   if(!isSystemLittleEndian())
-    reverseBytes(buffer, sizeof(T));
-  return *(reinterpret_cast<T*>(buffer));
+    reverseBytes(buffer, sizeof(uint16_t));
+  return *(reinterpret_cast<uint16_t*>(buffer));
 }
 
-using extractLittleEndianUint16 = extractLittleEndian<uint16_t>;
-using extractLittleEndianUint32 = extractLittleEndian<uint32_t>;
-using extractLittleEndianUint64 = extractLittleEndian<uint64_t>;
-using extractLittleEndianInt16 = extractLittleEndian<int16_t>;
-using extractLittleEndianInt32 = extractLittleEndian<int32_t>;
-using extractLittleEndianInt64 = extractLittleEndian<int64_t>;
+uint32_t extractLittleEndianUint32(char* buffer)
+// predicate: buffer size is at least sizeof(uint32_t) bytes.
+{
+  if(!isSystemLittleEndian())
+    reverseBytes(buffer, sizeof(uint32_t));
+  return *(reinterpret_cast<uint32_t*>(buffer));
+}
+
+uint64_t extractLittleEndianUint64(char* buffer)
+// predicate: buffer size is at least sizeof(uint64_t) bytes.
+{
+  if(!isSystemLittleEndian())
+    reverseBytes(buffer, sizeof(uint64_t));
+  return *(reinterpret_cast<uint64_t*>(buffer));
+}
+
+int16_t extractLittleEndianInt16(char* buffer)
+{
+// predicate: buffer size is at least sizeof(int16_t) bytes.
+  if(!isSystemLittleEndian())
+    reverseBytes(buffer, sizeof(int16_t));
+  return *(reinterpret_cast<int16_t*>(buffer));
+}
+
+int32_t extractLittleEndianInt32(char* buffer)
+{
+// predicate: buffer size is at least sizeof(int32_t) bytes.
+  if(!isSystemLittleEndian())
+    reverseBytes(buffer, sizeof(int32_t));
+  return *(reinterpret_cast<int32_t*>(buffer));
+}
+
+int64_t extractLittleEndianInt64(char* buffer)
+{
+// predicate: buffer size is at least sizeof(int64_t) bytes.
+  if(!isSystemLittleEndian())
+    reverseBytes(buffer, sizeof(int64_t));
+  return *(reinterpret_cast<int64_t*>(buffer));
+}
 
 // note: I am choosing NOT to pack these structs for use with reading binary data from a stream;
 // struct packing can lead to problems on certain platforms. Read binary data into arrays and
@@ -120,7 +156,7 @@ using extractLittleEndianInt64 = extractLittleEndian<int64_t>;
 
 struct BitmapFileHeader
 {
-  static constexpr int size {14};
+  static constexpr int size_bytes {14};
 
   uint16_t _fileMagic;
   uint32_t _fileSize;
@@ -222,27 +258,27 @@ enum BitmapInfoHeaderOffsets
 // modes are not supported.
 enum BitmapFileCompressionMode
 {
-  BI_RGB, BI_RLE8, BI_RLE4, BI_BITFIELDS, BI_JPEG, BI_PNG, BI_ALPHABITFIELDS, BI_CMYK = 11,
+  BI_RGB = 0, BI_RLE8, BI_RLE4, BI_BITFIELDS, BI_JPEG, BI_PNG, BI_ALPHABITFIELDS, BI_CMYK = 11,
   BI_CMYKRLE8, BI_CMYKRLE4
 };
 
-class BitmapImage
+class Image
 {
 public:
-  int load(std::string filename);
+  int loadBmp(std::string filename);
 private:
   void extractFileHeader(std::ifstream& file, BitmapFileHeader& header);
   void extractInfoHeader(std::ifstream& file, BitmapInfoHeader& header);
   void extractAppendedRGBMasks(std::ifstream& file, BitmapInfoHeader& header);
   void extractPalettedPixels(std::ifstream& file, BitmapInfoHeader& header);
-  void extractPixels(std::ifstream& file, BitmapInfoHeader* header);
+  void extractPixels(std::ifstream& file, BitmapFileHeader& fileHeader, BitmapInfoHeader& infoHeader);
 private:
   std::vector<Color4> _pixels;
   int _width_px;
   int _height_px;
 };
 
-int BitmapImage::load(std::string filename)
+int Image::loadBmp(std::string filename)
 {
   std::ifstream file {filename, std::ios_base::binary};
   if(!file){
@@ -259,12 +295,12 @@ int BitmapImage::load(std::string filename)
   extractInfoHeader(file, infoHeader);
 
   // other compression modes are not supported.
-  if(infoHeader._compression != BI_RGB || infoHeader._compression != BI_BITFIELDS){
+  if(infoHeader._compression != BI_RGB && infoHeader._compression != BI_BITFIELDS){
     return -1;
   }
 
   bool V2 {false}, V3_4_5 {false};
-  switch(infoHeader._headerSize)
+  switch(infoHeader._headerSize_bytes)
   {
   case BitmapInfoHeader::BITMAPV5HEADER_SIZE_BYTES:
 
@@ -291,10 +327,10 @@ int BitmapImage::load(std::string filename)
     // fallthrough
     
   case BitmapInfoHeader::BITMAPINFOHEADER_SIZE_BYTES:
-    if(infoHeader._bitCount <= 8){
+    if(infoHeader._bitsPerPixel <= 8){
       extractPalettedPixels(file, infoHeader);
     }
-    else if(infoHeader._bitCount == 16){
+    else if(infoHeader._bitsPerPixel == 16){
       if(infoHeader._compression == BI_RGB){
         // default masks for this scenario.
         infoHeader._redMask   = 0b00000000000000000111110000000000;
@@ -315,10 +351,10 @@ int BitmapImage::load(std::string filename)
         if(!V2 && !V3_4_5)
           extractAppendedRGBMasks(file, infoHeader);
 
-        extractPixels(file, infoHeader); 
+        extractPixels(file, fileHeader, infoHeader); 
       }
     }
-    else if(infoHeader._bitCount == 24){
+    else if(infoHeader._bitsPerPixel == 24){
       // default masks for this scenario.
       infoHeader._redMask   = 0b00000000111111110000000000000000;
       infoHeader._greenMask = 0b00000000000000001111111100000000;
@@ -326,7 +362,7 @@ int BitmapImage::load(std::string filename)
       infoHeader._alphaMask = 0b00000000000000000000000000000000;
       extractPixels(file, fileHeader, infoHeader); 
     }
-    else if(infoHeader._bitCount == 32){
+    else if(infoHeader._bitsPerPixel == 32){
       if(infoHeader._compression == BI_RGB){
         // default masks for this scenario.
         infoHeader._redMask   = 0b00000000111111110000000000000000;
@@ -341,7 +377,7 @@ int BitmapImage::load(std::string filename)
 
         extractPixels(file, fileHeader, infoHeader); 
       }
-      else if(info_header._compression == BI_BITFIELDS){
+      else if(infoHeader._compression == BI_BITFIELDS){
         // with BI_BITFIELDS and BITMAPINFOHEADER the masks are found appended to the end of 
         // the info header in an extra block of 12 bytes rather than in the header itself.
         if(!V2 && !V3_4_5)
@@ -354,27 +390,29 @@ int BitmapImage::load(std::string filename)
 
   _width_px = infoHeader._bmpWidth_px;
   _height_px = infoHeader._bmpHeight_px;
+
+  return 0;
 }
 
-void BitmapImage::extractFileHeader(std::ifstream& file, BitmapFileHeader& header)
+void Image::extractFileHeader(std::ifstream& file, BitmapFileHeader& header)
 {
-  uint8_t bytes[BitmapFileHeader::size_bytes];
+  char bytes[BitmapFileHeader::size_bytes];
   file.seekg(0);
-  file.read(&bytes, BitmapFileHeader::size_bytes);
+  file.read(static_cast<char*>(bytes), BitmapFileHeader::size_bytes);
   header._fileMagic = extractLittleEndianUint16(bytes);
   header._fileSize = extractLittleEndianUint32(bytes + 2);
   header._pixelOffset_bytes = extractLittleEndianUint32(bytes + 10);
 }
 
-void BitmapImage::extractInfoHeader(std::ifstream& file, BitmapInfoHeader& header)
+void Image::extractInfoHeader(std::ifstream& file, BitmapInfoHeader& header)
 {
   memset(&header, 0, sizeof(BitmapInfoHeader));
 
-  uint8_t bytes[BitmapInfoHeader::BITMAPINFOHEADER_SIZE_BYTES];
+  char bytes[BitmapInfoHeader::BITMAPINFOHEADER_SIZE_BYTES];
 
   // start by reading the header size to determine the info header version present.
   file.seekg(BitmapFileHeader::size_bytes);
-  file.read(&bytes, sizeof(BitmapInfoHeader::_headerSize_bytes)); 
+  file.read(static_cast<char*>(bytes), sizeof(BitmapInfoHeader::_headerSize_bytes)); 
   header._headerSize_bytes = extractLittleEndianUint32(bytes);
 
   int seekPos, readSize;
@@ -402,7 +440,7 @@ void BitmapImage::extractInfoHeader(std::ifstream& file, BitmapInfoHeader& heade
   case BitmapInfoHeader::BITMAPV2INFOHEADER_SIZE_BYTES:
     // although the masks are actually part of the V2 header they are in the same file position
     // as the masks appended to the BITMAPINFOHEADER.
-    extractAppendedRGBMasks(file, infoHeader);
+    extractAppendedRGBMasks(file, header);
 
     // fallthrough
     
@@ -424,23 +462,24 @@ void BitmapImage::extractInfoHeader(std::ifstream& file, BitmapInfoHeader& heade
   }
 }
 
-void BitmapImage::extractAppendedRGBMasks(std::ifstream& file, BitmapInfoHeader& header)
+void Image::extractAppendedRGBMasks(std::ifstream& file, BitmapInfoHeader& header)
 {
-  seekPos = BitmapFileHeader::size_bytes + BIHO_RED_MASK;
-  readSize = BIHO_ALPHA_MASK - BIHO_RED_MASK;
+  char bytes[12];
+  int seekPos = BitmapFileHeader::size_bytes + BIHO_RED_MASK;
+  int readSize = BIHO_ALPHA_MASK - BIHO_RED_MASK;
   file.seekg(seekPos);
-  file.read(bytes, readSize);
+  file.read(static_cast<char*>(bytes), readSize);
   header._redMask = extractLittleEndianUint32(bytes);
   header._greenMask = extractLittleEndianUint32(bytes + 4);
   header._blueMask = extractLittleEndianUint32(bytes + 8);
 }
 
-void BitmapImage::extractPalettedPixels(std::ifstream& file, BitmapInfoHeader& header)
+void Image::extractPalettedPixels(std::ifstream& file, BitmapInfoHeader& header)
 {
 
 }
 
-void BitmapImage::extractPixels(std::ifstream& file, BitmapFileHeader& fileHeader, 
+void Image::extractPixels(std::ifstream& file, BitmapFileHeader& fileHeader, 
                                 BitmapInfoHeader& infoHeader)
 {
   // If bitmap height is negative the origin is in top-left corner in the file so the first
@@ -449,12 +488,12 @@ void BitmapImage::extractPixels(std::ifstream& file, BitmapFileHeader& fileHeade
   // in-memory pixels. If the bitmap height is positive then we can simply read the first row
   // in the file first, as this will be the first row in the in-memory bitmap.
   
-  int rowSize_bytes = std::ciel((infoHeader._bitsPerPixel * infoHeader._bmpWidth_px) / 32.f) * 4.f;  
+  int rowSize_bytes = std::ceil((infoHeader._bitsPerPixel * infoHeader._bmpWidth_px) / 32.f) * 4.f;  
   int pixelSize_bytes = infoHeader._bitsPerPixel / 8;
 
   int numRows = std::abs(infoHeader._bmpHeight_px);
   bool isTopOrigin = (infoHeader._bmpHeight_px < 0);
-  int pixelOffset_bytes {fileHeader._pixelOffset_bytes};
+  int pixelOffset_bytes = static_cast<int>(fileHeader._pixelOffset_bytes);
   int rowOffset_bytes {rowSize_bytes};
   if(isTopOrigin){
     pixelOffset_bytes += (numRows - 1) * rowSize_bytes;
@@ -468,21 +507,21 @@ void BitmapImage::extractPixels(std::ifstream& file, BitmapFileHeader& fileHeade
   int blueShift {0};
   int alphaShift {0};
 
-  while(infoHeader._redMask & (0x01 << redShift) == 0) ++redShift;
-  while(infoHeader._greenMask & (0x01 << greenShift) == 0) ++greenShift;
-  while(infoHeader._blueMask & (0x01 << blueShift) == 0) ++blueShift;
-  if(alphaMask)
-    while(infoHeader._alphaMask & (0x01 << alphaShift) == 0) ++alphaShift;
+  while((infoHeader._redMask & (0x01 << redShift)) == 0) ++redShift;
+  while((infoHeader._greenMask & (0x01 << greenShift)) == 0) ++greenShift;
+  while((infoHeader._blueMask & (0x01 << blueShift)) == 0) ++blueShift;
+  if(infoHeader._alphaMask)
+    while((infoHeader._alphaMask & (0x01 << alphaShift)) == 0) ++alphaShift;
 
   _pixels.reserve(infoHeader._bmpWidth_px * numRows);
 
   int seekPos {pixelOffset_bytes};
-  uint8_t* row = new uint8_t[rowSize_bytes];
+  char* row = new char[rowSize_bytes];
 
   // for each row of pixels.
   for(int i = 0; i < numRows; ++i){
     file.seekg(seekPos);
-    file.read(row, rowSize_bytes);
+    file.read(static_cast<char*>(row), rowSize_bytes);
 
     // for each pixel.
     for(int j = 0; j < infoHeader._bmpWidth_px; ++j){
@@ -493,7 +532,7 @@ void BitmapImage::extractPixels(std::ifstream& file, BitmapFileHeader& fileHeade
         uint8_t pixelByte = row[(j * pixelSize_bytes) + k];
 
         // 0rth byte of pixel stored in LSB of rawPixelBytes.
-        rawPixelBytes |= (row[(j * pixelSize_bytes) + k] << (k * 8));
+        rawPixelBytes |= static_cast<uint32_t>(pixelByte << (k * 8));
       }
 
       uint8_t red = (rawPixelBytes & infoHeader._redMask) >> redShift;
@@ -508,3 +547,8 @@ void BitmapImage::extractPixels(std::ifstream& file, BitmapFileHeader& fileHeade
   delete[] row;
 }
 
+int main()
+{
+  Image image;
+  image.loadBmp("4x4.bmp");
+}
